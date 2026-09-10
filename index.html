@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4CAF50">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="買い物メモ">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>買い物計算メモ</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <!-- ===== 固定ヘッダー：残高表示 ===== -->
+    <header id="balance-bar">
+      <div class="balance-label">のこり予算</div>
+      <div id="balance-amount" class="balance-amount">¥0</div>
+    </header>
+
+    <main>
+      <!-- ===== 予算設定エリア ===== -->
+      <section id="budget-section" class="card">
+        <h2>💰 今日の予算</h2>
+        <div class="budget-input-row">
+          <div class="input-with-yen">
+            <span class="yen-inside">¥</span>
+            <input type="number" id="budget-input" inputmode="numeric" pattern="[0-9]*"
+                   placeholder="例: 3000" min="0" step="1">
+          </div>
+          <button id="budget-set-btn" class="btn btn-primary">設定</button>
+        </div>
+        <div id="budget-display" class="budget-display hidden">
+          <span>予算: <strong id="budget-value">¥0</strong></span>
+          <button id="budget-edit-btn" class="btn btn-small btn-outline">変更</button>
+        </div>
+      </section>
+
+      <!-- ===== 買い物リストエリア ===== -->
+      <section id="list-section" class="card">
+        <h2>🛒 買い物リスト</h2>
+        <div class="add-item-row">
+          <div class="input-with-clear">
+            <input type="text" id="item-name-input" placeholder="品名を入力"
+                   enterkeyhint="done">
+            <button type="button" id="item-name-clear" class="input-clear-btn" aria-label="入力をクリア">✕</button>
+          </div>
+          <button id="add-item-btn" class="btn btn-primary">追加</button>
+        </div>
+        <div id="list-toolbar" class="list-toolbar hidden">
+          <label class="select-all-label">
+            <input type="checkbox" id="select-all-cb" class="item-checkbox">
+            <span>すべて選択</span>
+          </label>
+          <button id="delete-checked-btn" class="btn btn-small btn-danger" disabled>
+            <span>✕ 選択を削除</span>
+          </button>
+        </div>
+        <ul id="shopping-list" class="shopping-list"></ul>
+      </section>
+
+      <!-- ===== その他（衝動買い）エリア ===== -->
+      <section id="extra-section" class="card">
+        <h2>🛍️ その他（予定外の買い物）</h2>
+        <div class="add-extra-row">
+          <input type="text" id="extra-name-input" placeholder="品名（任意）"
+                 enterkeyhint="done">
+          <div class="input-with-yen">
+            <span class="yen-inside">¥</span>
+            <input type="number" id="extra-price-input" inputmode="numeric"
+                   pattern="[0-9]*" placeholder="金額" min="0" step="1">
+          </div>
+          <button id="add-extra-btn" class="btn btn-accent">追加</button>
+        </div>
+        <ul id="extra-list" class="shopping-list"></ul>
+      </section>
+
+      <!-- ===== 完了ボタン ===== -->
+      <section class="card complete-section">
+        <button id="complete-btn" class="btn btn-complete">🧾 買い物を完了する</button>
+      </section>
+
+      <!-- ===== 最終結果モーダル ===== -->
+      <div id="result-overlay" class="overlay hidden">
+        <div class="result-modal">
+          <h2>🧾 お買い物結果</h2>
+          <div class="result-row">
+            <span>予算</span>
+            <span id="result-budget">¥0</span>
+          </div>
+          <div class="result-row">
+            <span>合計金額</span>
+            <span id="result-total">¥0</span>
+          </div>
+          <hr>
+          <div class="result-row result-balance-row">
+            <span>残高</span>
+            <span id="result-balance" class="result-balance">¥0</span>
+          </div>
+          <div id="result-items-detail" class="result-items-detail"></div>
+          <div class="result-actions">
+            <button id="result-close-btn" class="btn btn-primary btn-wide">閉じる</button>
+            <button id="result-reset-btn" class="btn btn-outline btn-wide">リセットして新しく始める</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

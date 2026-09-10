@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#4CAF50">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="買い物メモ">
+  <title>買い物計算メモ</title>
+  <style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --green-primary: #4CAF50; --green-dark: #388E3C; --green-light: #C8E6C9;
+  --accent: #FF9800; --accent-dark: #F57C00;
+  --red: #E53935; --red-light: #FFEBEE;
+  --bg: #F5F5F5; --card-bg: #FFFFFF;
+  --text: #212121; --text-secondary: #757575;
+  --border: #E0E0E0; --radius: 12px;
+  --shadow: 0 2px 8px rgba(0,0,0,0.08); --header-height: 72px;
+}
+html { font-size: 16px; -webkit-tap-highlight-color: transparent; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; min-height: 100dvh; overscroll-behavior: none;
+}
+#balance-bar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+  height: var(--header-height); background: var(--green-primary); color: #fff;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+  padding: env(safe-area-inset-top, 0) 16px 0;
+}
+.balance-label { font-size: 0.75rem; opacity: 0.9; letter-spacing: 0.05em; }
+.balance-amount { font-size: 2rem; font-weight: 800; letter-spacing: -0.02em; transition: color 0.3s; }
+.balance-amount.over-budget { color: #FFCDD2; animation: pulse 1s ease-in-out; }
+@keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+main {
+  padding-top: calc(var(--header-height) + 12px); padding-bottom: 32px;
+  max-width: 480px; margin: 0 auto; padding-left: 12px; padding-right: 12px;
+}
+.card { background: var(--card-bg); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; margin-bottom: 12px; }
+.card h2 { font-size: 1rem; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; border: none; border-radius: 8px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; padding: 12px 20px; min-height: 48px;
+  transition: background 0.15s, transform 0.1s; -webkit-user-select: none; user-select: none; white-space: nowrap;
+}
+.btn:active { transform: scale(0.96); }
+.btn-primary { background: var(--green-primary); color: #fff; }
+.btn-primary:active { background: var(--green-dark); }
+.btn-accent { background: var(--accent); color: #fff; }
+.btn-accent:active { background: var(--accent-dark); }
+.btn-outline { background: transparent; border: 2px solid var(--green-primary); color: var(--green-primary); }
+.btn-small { padding: 6px 12px; min-height: 36px; font-size: 0.85rem; }
+.btn-wide { width: 100%; }
+.btn-complete { width: 100%; background: var(--green-primary); color: #fff; font-size: 1.15rem; padding: 16px; min-height: 56px; border-radius: 12px; }
+.btn-complete:active { background: var(--green-dark); }
+.budget-input-row { display: flex; align-items: center; gap: 8px; }
+.input-with-yen { flex: 1; position: relative; display: flex; align-items: center; min-width: 0; }
+.yen-inside { position: absolute; left: 12px; font-size: 1.1rem; font-weight: 700; color: var(--text-secondary); pointer-events: none; z-index: 1; }
+.budget-input-row .input-with-yen input {
+  width: 100%; font-size: 1.25rem; padding: 12px 12px 12px 32px;
+  border: 2px solid var(--border); border-radius: 8px; min-height: 48px; outline: none; transition: border-color 0.2s;
+}
+.budget-input-row .input-with-yen input:focus { border-color: var(--green-primary); }
+.budget-display { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; font-size: 1.1rem; }
+.hidden { display: none !important; }
+.add-item-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.input-with-clear { flex: 1; position: relative; display: flex; align-items: center; }
+.input-with-clear input { width: 100%; font-size: 1rem; padding: 12px; padding-right: 40px; border: 2px solid var(--border); border-radius: 8px; min-height: 48px; outline: none; }
+.input-with-clear input:focus { border-color: var(--green-primary); }
+.input-clear-btn {
+  position: absolute; right: 6px; width: 32px; height: 32px; border: none; background: var(--border); color: #fff;
+  font-size: 0.85rem; font-weight: 700; border-radius: 50%; cursor: pointer; display: none; align-items: center; justify-content: center;
+  -webkit-user-select: none; user-select: none; transition: background 0.15s;
+}
+.input-clear-btn.visible { display: flex; }
+.input-clear-btn:active { background: var(--text-secondary); }
+.list-toolbar { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+.select-all-label { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--text-secondary); cursor: pointer; -webkit-user-select: none; user-select: none; min-height: 44px; }
+.btn-danger { background: var(--red); color: #fff; }
+.btn-danger:active { background: #C62828; }
+.btn-danger:disabled { background: var(--border); color: var(--text-secondary); opacity: 0.6; }
+.add-extra-row { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+.add-extra-row input[type="text"] { flex: 1 1 40%; min-width: 80px; font-size: 0.95rem; padding: 10px; border: 2px solid var(--border); border-radius: 8px; min-height: 48px; outline: none; }
+.add-extra-row .input-with-yen { flex: 1 1 25%; min-width: 80px; }
+.add-extra-row .input-with-yen input { width: 100%; font-size: 1rem; padding: 10px 10px 10px 28px; border: 2px solid var(--border); border-radius: 8px; min-height: 48px; outline: none; }
+.add-extra-row input:focus { border-color: var(--green-primary); }
+.shopping-list { list-style: none; }
+.shopping-list li { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); animation: slideIn 0.25s ease-out; }
+.shopping-list li:last-child { border-bottom: none; }
+@keyframes slideIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+.item-checkbox {
+  -webkit-appearance: none; appearance: none; width: 28px; height: 28px; min-width: 28px;
+  border: 2.5px solid var(--green-primary); border-radius: 6px; cursor: pointer; position: relative; transition: background 0.15s;
+}
+.item-checkbox:checked { background: var(--green-primary); }
+.item-checkbox:checked::after { content: '✓'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #fff; font-size: 1rem; font-weight: 800; }
+.item-checkbox:indeterminate { background: var(--green-light); border-color: var(--green-primary); }
+.item-checkbox:indeterminate::after { content: '–'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: var(--green-dark); font-size: 1.2rem; font-weight: 800; }
+.item-name { flex: 1; font-size: 1rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; transition: opacity 0.2s; }
+.item-name.checked { text-decoration: line-through; opacity: 0.5; }
+.item-price-input { width: 90px; font-size: 1rem; padding: 8px; border: 2px solid var(--border); border-radius: 8px; text-align: right; min-height: 44px; outline: none; transition: border-color 0.2s; }
+.item-price-input:focus { border-color: var(--green-primary); }
+.item-price-input.has-value { border-color: var(--green-light); background: #F9FBF9; }
+.item-delete-btn {
+  width: 40px; height: 40px; min-width: 40px; border: none; background: var(--red-light); color: var(--red);
+  font-size: 1.1rem; font-weight: 700; cursor: pointer; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s, transform 0.1s; -webkit-user-select: none; user-select: none;
+}
+.item-delete-btn:active { background: var(--red); color: #fff; transform: scale(0.9); }
+.extra-price { font-size: 1rem; font-weight: 600; color: var(--accent-dark); white-space: nowrap; }
+.complete-section { background: transparent; box-shadow: none; padding: 0; }
+.overlay { position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,0.5); display: flex; align-items: flex-end; justify-content: center; animation: fadeIn 0.2s ease-out; }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+.result-modal {
+  background: var(--card-bg); border-radius: 20px 20px 0 0; padding: 24px 20px;
+  padding-bottom: calc(24px + env(safe-area-inset-bottom, 0));
+  width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto; animation: slideUp 0.3s ease-out;
+}
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.result-modal h2 { text-align: center; font-size: 1.2rem; margin-bottom: 20px; }
+.result-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; font-size: 1.05rem; }
+.result-balance-row { font-size: 1.3rem; font-weight: 700; }
+.result-balance { font-weight: 800; }
+.result-balance.over { color: var(--red); }
+.result-balance.under { color: var(--green-primary); }
+.result-items-detail { margin-top: 16px; padding: 12px; background: var(--bg); border-radius: 8px; font-size: 0.9rem; max-height: 200px; overflow-y: auto; }
+.result-items-detail .detail-row { display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.result-items-detail .detail-row:last-child { border-bottom: none; }
+.result-items-detail .detail-label { color: var(--text-secondary); }
+.result-actions { margin-top: 20px; display: flex; flex-direction: column; gap: 10px; }
+input[type="number"]::-webkit-inner-spin-button, input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+input[type="number"] { -moz-appearance: textfield; }
+.empty-placeholder { text-align: center; padding: 20px; color: var(--text-secondary); font-size: 0.9rem; }
+@media (min-width: 481px) { main { padding-left: 20px; padding-right: 20px; } }
+@supports (padding: env(safe-area-inset-bottom)) {
+  main { padding-bottom: calc(32px + env(safe-area-inset-bottom)); }
+  #balance-bar { padding-top: env(safe-area-inset-top, 0); height: calc(var(--header-height) + env(safe-area-inset-top, 0)); }
+}
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header id="balance-bar">
+      <div class="balance-label">のこり予算</div>
+      <div id="balance-amount" class="balance-amount">¥0</div>
+    </header>
+    <main>
+      <section id="budget-section" class="card">
+        <h2>💰 今日の予算</h2>
+        <div class="budget-input-row">
+          <div class="input-with-yen">
+            <span class="yen-inside">¥</span>
+            <input type="number" id="budget-input" inputmode="numeric" pattern="[0-9]*"
+                   placeholder="例: 3000" min="0" step="1">
+          </div>
+          <button id="budget-set-btn" class="btn btn-primary">設定</button>
+        </div>
+        <div id="budget-display" class="budget-display hidden">
+          <span>予算: <strong id="budget-value">¥0</strong></span>
+          <button id="budget-edit-btn" class="btn btn-small btn-outline">変更</button>
+        </div>
+      </section>
+      <section id="list-section" class="card">
+        <h2>🛒 買い物リスト</h2>
+        <div class="add-item-row">
+          <div class="input-with-clear">
+            <input type="text" id="item-name-input" placeholder="品名を入力" enterkeyhint="done">
+            <button type="button" id="item-name-clear" class="input-clear-btn" aria-label="入力をクリア">✕</button>
+          </div>
+          <button id="add-item-btn" class="btn btn-primary">追加</button>
+        </div>
+        <div id="list-toolbar" class="list-toolbar hidden">
+          <label class="select-all-label">
+            <input type="checkbox" id="select-all-cb" class="item-checkbox">
+            <span>すべて選択</span>
+          </label>
+          <button id="delete-checked-btn" class="btn btn-small btn-danger" disabled>
+            <span>✕ 選択を削除</span>
+          </button>
+        </div>
+        <ul id="shopping-list" class="shopping-list"></ul>
+      </section>
+      <section id="extra-section" class="card">
+        <h2>🛍️ その他（予定外の買い物）</h2>
+        <div class="add-extra-row">
+          <input type="text" id="extra-name-input" placeholder="品名（任意）" enterkeyhint="done">
+          <div class="input-with-yen">
+            <span class="yen-inside">¥</span>
+            <input type="number" id="extra-price-input" inputmode="numeric"
+                   pattern="[0-9]*" placeholder="金額" min="0" step="1">
+          </div>
+          <button id="add-extra-btn" class="btn btn-accent">追加</button>
+        </div>
+        <ul id="extra-list" class="shopping-list"></ul>
+      </section>
+      <section class="card complete-section">
+        <button id="complete-btn" class="btn btn-complete">🧾 買い物を完了する</button>
+      </section>
+      <div id="result-overlay" class="overlay hidden">
+        <div class="result-modal">
+          <h2>🧾 お買い物結果</h2>
+          <div class="result-row"><span>予算</span><span id="result-budget">¥0</span></div>
+          <div class="result-row"><span>合計金額</span><span id="result-total">¥0</span></div>
+          <hr>
+          <div class="result-row result-balance-row"><span>残高</span><span id="result-balance" class="result-balance">¥0</span></div>
+          <div id="result-items-detail" class="result-items-detail"></div>
+          <div class="result-actions">
+            <button id="result-close-btn" class="btn btn-primary btn-wide">閉じる</button>
+            <button id="result-reset-btn" class="btn btn-outline btn-wide">リセットして新しく始める</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script>
+(() => {
+  'use strict';
+  let budget = 0, budgetSet = false, shoppingItems = [], extraItems = [], nextId = 1;
+  const $ = s => document.querySelector(s);
+  const balanceAmountEl = $('#balance-amount'), budgetInput = $('#budget-input');
+  const budgetSetBtn = $('#budget-set-btn'), budgetDisplay = $('#budget-display');
+  const budgetValue = $('#budget-value'), budgetEditBtn = $('#budget-edit-btn');
+  const budgetInputRow = document.querySelector('.budget-input-row');
+  const itemNameInput = $('#item-name-input'), itemNameClearBtn = $('#item-name-clear');
+  const addItemBtn = $('#add-item-btn'), shoppingListEl = $('#shopping-list');
+  const listToolbar = $('#list-toolbar'), selectAllCb = $('#select-all-cb');
+  const deleteCheckedBtn = $('#delete-checked-btn');
+  const extraNameInput = $('#extra-name-input'), extraPriceInput = $('#extra-price-input');
+  const addExtraBtn = $('#add-extra-btn'), extraListEl = $('#extra-list');
+  const completeBtn = $('#complete-btn'), resultOverlay = $('#result-overlay');
+  const resultBudget = $('#result-budget'), resultTotal = $('#result-total');
+  const resultBalance = $('#result-balance'), resultItemsDetail = $('#result-items-detail');
+  const resultCloseBtn = $('#result-close-btn'), resultResetBtn = $('#result-reset-btn');
+
+  budgetSetBtn.addEventListener('click', () => setBudget());
+  budgetInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); setBudget(); } });
+  budgetEditBtn.addEventListener('click', () => {
+    budgetSet = false; budgetDisplay.classList.add('hidden'); budgetInputRow.classList.remove('hidden');
+    budgetInput.value = budget || ''; budgetInput.focus();
+  });
+  function setBudget() {
+    const val = parseInt(budgetInput.value, 10);
+    if (isNaN(val) || val < 0) { budgetInput.focus(); return; }
+    budget = val; budgetSet = true; budgetValue.textContent = formatYen(budget);
+    budgetInputRow.classList.add('hidden'); budgetDisplay.classList.remove('hidden');
+    budgetInput.blur(); updateBalance(); saveState();
+  }
+
+  addItemBtn.addEventListener('click', () => addShoppingItem());
+  itemNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addShoppingItem(); } });
+  itemNameInput.addEventListener('input', () => toggleClearBtn());
+  itemNameClearBtn.addEventListener('click', () => { itemNameInput.value = ''; toggleClearBtn(); itemNameInput.focus(); });
+  function toggleClearBtn() { itemNameClearBtn.classList.toggle('visible', itemNameInput.value.length > 0); }
+
+  function addShoppingItem() {
+    const name = itemNameInput.value.trim();
+    if (!name) { itemNameInput.focus(); return; }
+    shoppingItems.unshift({ id: nextId++, name, price: null, checked: false });
+    itemNameInput.blur(); itemNameInput.value = ''; toggleClearBtn();
+    setTimeout(() => itemNameInput.focus(), 50);
+    renderShoppingList(); saveState();
+  }
+
+  function renderShoppingList() {
+    shoppingListEl.innerHTML = '';
+    if (shoppingItems.length === 0) {
+      listToolbar.classList.add('hidden');
+      shoppingListEl.innerHTML = '<li class="empty-placeholder">品目を追加してください</li>';
+      updateToolbarState(); return;
+    }
+    listToolbar.classList.remove('hidden');
+    shoppingItems.forEach(item => {
+      const li = document.createElement('li');
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.className = 'item-checkbox'; cb.checked = item.checked;
+      cb.setAttribute('aria-label', `${item.name} を選択`);
+      cb.addEventListener('change', () => { item.checked = cb.checked; nameSpan.classList.toggle('checked', item.checked); updateToolbarState(); updateBalance(); saveState(); });
+      const nameSpan = document.createElement('span'); nameSpan.className = 'item-name' + (item.checked ? ' checked' : ''); nameSpan.textContent = item.name;
+      const priceInput = document.createElement('input'); priceInput.type = 'number'; priceInput.inputMode = 'numeric'; priceInput.pattern = '[0-9]*';
+      priceInput.className = 'item-price-input' + (item.price !== null ? ' has-value' : ''); priceInput.placeholder = '¥'; priceInput.min = '0'; priceInput.step = '1';
+      if (item.price !== null) priceInput.value = item.price;
+      priceInput.setAttribute('aria-label', `${item.name} の金額`);
+      priceInput.addEventListener('input', () => {
+        const val = priceInput.value.trim();
+        if (val === '') { item.price = null; priceInput.classList.remove('has-value'); }
+        else { item.price = parseInt(val, 10) || 0; priceInput.classList.add('has-value'); }
+        updateBalance(); saveState();
+      });
+      const delBtn = document.createElement('button'); delBtn.className = 'item-delete-btn'; delBtn.innerHTML = '✕';
+      delBtn.setAttribute('aria-label', `${item.name} を削除`);
+      delBtn.addEventListener('click', () => { shoppingItems = shoppingItems.filter(i => i.id !== item.id); renderShoppingList(); updateBalance(); saveState(); });
+      li.appendChild(cb); li.appendChild(nameSpan); li.appendChild(priceInput); li.appendChild(delBtn);
+      shoppingListEl.appendChild(li);
+    });
+    updateToolbarState();
+  }
+
+  selectAllCb.addEventListener('change', () => { shoppingItems.forEach(i => { i.checked = selectAllCb.checked; }); renderShoppingList(); updateBalance(); saveState(); });
+  deleteCheckedBtn.addEventListener('click', () => {
+    const c = shoppingItems.filter(i => i.checked).length; if (!c) return;
+    if (confirm(`選択した ${c} 件を削除しますか？`)) { shoppingItems = shoppingItems.filter(i => !i.checked); renderShoppingList(); updateBalance(); saveState(); }
+  });
+  function updateToolbarState() {
+    if (!shoppingItems.length) { selectAllCb.checked = false; selectAllCb.indeterminate = false; deleteCheckedBtn.disabled = true; return; }
+    const c = shoppingItems.filter(i => i.checked).length;
+    selectAllCb.checked = c === shoppingItems.length; selectAllCb.indeterminate = c > 0 && c < shoppingItems.length; deleteCheckedBtn.disabled = c === 0;
+  }
+
+  addExtraBtn.addEventListener('click', () => addExtraItem());
+  extraPriceInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addExtraItem(); } });
+  extraNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); extraPriceInput.focus(); } });
+  function addExtraItem() {
+    const priceVal = parseInt(extraPriceInput.value, 10);
+    if (isNaN(priceVal) || priceVal < 0) { extraPriceInput.focus(); return; }
+    extraItems.push({ id: nextId++, name: extraNameInput.value.trim() || 'その他', price: priceVal });
+    extraNameInput.value = ''; extraPriceInput.value = ''; renderExtraList(); updateBalance(); saveState();
+  }
+  function renderExtraList() {
+    extraListEl.innerHTML = ''; if (!extraItems.length) return;
+    extraItems.forEach(item => {
+      const li = document.createElement('li');
+      const ns = document.createElement('span'); ns.className = 'item-name'; ns.textContent = item.name;
+      const ps = document.createElement('span'); ps.className = 'extra-price'; ps.textContent = formatYen(item.price);
+      const db = document.createElement('button'); db.className = 'item-delete-btn'; db.innerHTML = '✕';
+      db.addEventListener('click', () => { extraItems = extraItems.filter(i => i.id !== item.id); renderExtraList(); updateBalance(); saveState(); });
+      li.appendChild(ns); li.appendChild(ps); li.appendChild(db); extraListEl.appendChild(li);
+    });
+  }
+
+  function calcTotal() { let t = 0; shoppingItems.forEach(i => { if (i.price !== null) t += i.price; }); extraItems.forEach(i => { t += i.price; }); return t; }
+  function updateBalance() {
+    const r = budget - calcTotal(); balanceAmountEl.textContent = formatYen(r);
+    r < 0 ? balanceAmountEl.classList.add('over-budget') : balanceAmountEl.classList.remove('over-budget');
+  }
+
+  completeBtn.addEventListener('click', () => showResult());
+  resultCloseBtn.addEventListener('click', () => resultOverlay.classList.add('hidden'));
+  resultResetBtn.addEventListener('click', () => { if (confirm('すべてリセットして新しく始めますか？')) { resetAll(); resultOverlay.classList.add('hidden'); } });
+  resultOverlay.addEventListener('click', e => { if (e.target === resultOverlay) resultOverlay.classList.add('hidden'); });
+  function showResult() {
+    const total = calcTotal(), remaining = budget - total;
+    resultBudget.textContent = formatYen(budget); resultTotal.textContent = formatYen(total); resultBalance.textContent = formatYen(remaining);
+    if (remaining < 0) { resultBalance.classList.add('over'); resultBalance.classList.remove('under'); }
+    else { resultBalance.classList.remove('over'); resultBalance.classList.add('under'); }
+    resultItemsDetail.innerHTML = '';
+    const all = [...shoppingItems.filter(i => i.price !== null).map(i => ({ name: i.name, price: i.price })), ...extraItems.map(i => ({ name: i.name, price: i.price }))];
+    if (!all.length) { resultItemsDetail.innerHTML = '<div style="text-align:center;color:#999;">購入した品目はありません</div>'; }
+    else { all.forEach(i => { const r = document.createElement('div'); r.className = 'detail-row'; r.innerHTML = `<span class="detail-label">${escapeHtml(i.name)}</span><span>${formatYen(i.price)}</span>`; resultItemsDetail.appendChild(r); }); }
+    resultOverlay.classList.remove('hidden');
+  }
+
+  function resetAll() {
+    budget = 0; budgetSet = false; shoppingItems = []; extraItems = []; nextId = 1; budgetInput.value = '';
+    budgetDisplay.classList.add('hidden'); budgetInputRow.classList.remove('hidden');
+    renderShoppingList(); renderExtraList(); updateBalance(); clearState();
+  }
+  function saveState() { try { localStorage.setItem('shopping-calc-state', JSON.stringify({ budget, budgetSet, shoppingItems, extraItems, nextId })); } catch(e){} }
+  function loadState() {
+    try { const r = localStorage.getItem('shopping-calc-state'); if (!r) return; const s = JSON.parse(r);
+      budget = s.budget||0; budgetSet = s.budgetSet||false; shoppingItems = s.shoppingItems||[]; extraItems = s.extraItems||[]; nextId = s.nextId||1;
+      if (budgetSet) { budgetValue.textContent = formatYen(budget); budgetInputRow.classList.add('hidden'); budgetDisplay.classList.remove('hidden'); }
+      renderShoppingList(); renderExtraList(); updateBalance(); } catch(e){}
+  }
+  function clearState() { try { localStorage.removeItem('shopping-calc-state'); } catch(e){} }
+  function formatYen(a) { return a < 0 ? `-¥${Math.abs(a).toLocaleString()}` : `¥${a.toLocaleString()}`; }
+  function escapeHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+  loadState(); renderShoppingList(); updateBalance();
+})();
+  </script>
+</body>
+</html>
