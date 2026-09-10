@@ -33,17 +33,25 @@ body {
                'Noto Sans JP', sans-serif;
   background: var(--bg);
   color: var(--text);
-  min-height: 100vh;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   overscroll-behavior: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
 }
 
 /* ===== Fixed Header: Balance Bar ===== */
 #balance-bar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
+  flex-shrink: 0;
+  position: relative;
   z-index: 100;
   height: var(--header-height);
   background: var(--green-primary);
@@ -81,8 +89,12 @@ body {
 
 /* ===== Main ===== */
 main {
-  padding-top: calc(var(--header-height) + 12px);
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-top: 12px;
   padding-bottom: 32px;
+  width: 100%;
   max-width: 480px;
   margin: 0 auto;
   padding-left: 12px;
