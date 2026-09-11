@@ -96,6 +96,7 @@
   // ===== Shopping List =====
   addItemBtn.addEventListener('click', () => addShoppingItem());
   itemNameInput.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') { e.preventDefault(); addShoppingItem(); }
   });
 
@@ -122,11 +123,12 @@
     const item = { id: nextId++, name, price: null, checked: false, taxRate };
     shoppingItems.unshift(item);
     
-    itemNameInput.blur();
-    itemNameInput.blur();
-    itemNameInput.value = '';
-    toggleClearBtn();
-    itemNameInput.focus();
+    setTimeout(() => {
+      itemNameInput.value = '';
+      toggleClearBtn();
+      itemNameInput.focus();
+    }, 10);
+    
     renderShoppingList();
     saveState();
   }
@@ -260,6 +262,7 @@
     if (e.key === 'Enter') { e.preventDefault(); addExtraItem(); }
   });
   extraNameInput.addEventListener('keydown', (e) => {
+    if (e.isComposing || e.keyCode === 229) return;
     if (e.key === 'Enter') { e.preventDefault(); extraPriceInput.focus(); }
   });
 
@@ -271,8 +274,12 @@
     const taxRate = taxMemory[name] ? taxMemory[name] : 10;
     const item = { id: nextId++, name, price: priceVal, taxRate };
     extraItems.push(item);
-    extraNameInput.value = '';
-    extraPriceInput.value = '';
+    
+    setTimeout(() => {
+      extraNameInput.value = '';
+      extraPriceInput.value = '';
+    }, 10);
+    
     renderExtraList();
     updateBalance();
     saveState();
