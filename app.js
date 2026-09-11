@@ -56,7 +56,6 @@
   const historyCloseBtn = $('#history-close-btn');
   const historyEmpty = $('#history-empty');
   const historyClearAllBtn = $('#history-clear-all-btn');
-  const historyClearAllBtn = $('#history-clear-all-btn');
 
   // ===== Tax Configuration =====
   function getTaxRate(name) {
