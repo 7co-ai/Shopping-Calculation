@@ -35,5 +35,3 @@ cat << 'HTML_FOOT_2' >> shopping-calc-allinone.html
 </body>
 </html>
 HTML_FOOT_2
-chmod +x generate_allinone.sh
-./generate_allinone.sh

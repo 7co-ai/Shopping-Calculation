@@ -55,6 +55,8 @@
   const historyList = $('#history-list');
   const historyCloseBtn = $('#history-close-btn');
   const historyEmpty = $('#history-empty');
+  const historyClearAllBtn = $('#history-clear-all-btn');
+  const historyClearAllBtn = $('#history-clear-all-btn');
 
   // ===== Tax Configuration =====
   function getTaxRate(name) {
@@ -122,9 +124,10 @@
     shoppingItems.unshift(item);
     
     itemNameInput.blur();
+    itemNameInput.blur();
     itemNameInput.value = '';
     toggleClearBtn();
-    setTimeout(() => itemNameInput.focus(), 50);
+    itemNameInput.focus();
     renderShoppingList();
     saveState();
   }
@@ -463,25 +466,57 @@
     historyList.innerHTML = '';
     if (receiptHistory.length === 0) {
       historyEmpty.classList.remove('hidden');
+      if (historyClearAllBtn) historyClearAllBtn.classList.add('hidden');
     } else {
       historyEmpty.classList.add('hidden');
+      if (historyClearAllBtn) historyClearAllBtn.classList.remove('hidden');
       receiptHistory.forEach(receipt => {
         const li = document.createElement('li');
         li.className = 'history-item';
-        li.innerHTML = `
+        
+        const contentDiv = document.createElement('div');
+        contentDiv.className = 'history-item-content';
+        contentDiv.innerHTML = `
           <div>
             <div class="history-item-date">${receipt.date}</div>
             <div class="history-item-total">${formatYen(receipt.total)}</div>
           </div>
           <div class="history-item-arrow">〉</div>
         `;
-        li.addEventListener('click', () => {
+        contentDiv.addEventListener('click', () => {
           historyOverlay.classList.add('hidden');
           showResult(receipt);
         });
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'history-delete-btn';
+        delBtn.innerHTML = '✕';
+        delBtn.setAttribute('aria-label', '履歴を削除');
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (confirm('このレシート履歴を削除しますか？')) {
+            receiptHistory = receiptHistory.filter(r => r.id !== receipt.id);
+            saveState();
+            renderHistory();
+          }
+        });
+
+        li.appendChild(contentDiv);
+        li.appendChild(delBtn);
         historyList.appendChild(li);
       });
     }
+  }
+
+  if (historyClearAllBtn) {
+    historyClearAllBtn.addEventListener('click', () => {
+      if (receiptHistory.length === 0) return;
+      if (confirm('すべてのレシート履歴を削除しますか？')) {
+        receiptHistory = [];
+        saveState();
+        renderHistory();
+      }
+    });
   }
 
   // ===== Reset =====
