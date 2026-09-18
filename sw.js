@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shopping-calc-v7';
+const CACHE_NAME = 'shopping-calc-v8';
 const ASSETS = [
   './',
   './index.html',

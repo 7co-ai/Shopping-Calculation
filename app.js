@@ -578,7 +578,8 @@
     }
   }
 
-\n  // ===== History Modal =====
+
+  // ===== History Modal =====
   historyBtn.addEventListener('click', () => {
     renderHistory();
     historyOverlay.classList.remove('hidden');
