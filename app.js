@@ -532,9 +532,9 @@
 
     function parseAndAddVoiceItem(text) {
       text = text.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
-      text = text.replace(/(円|えん|くらい|ぐらい|です|だね)/g, ' ');
+      text = text.replace(/(円|えん|くらい|ぐらい|です|だね)/g, '').trim();
 
-      const match = text.match(/(.+?)[\s、]+(\d+)$/);
+      const match = text.match(/(.+?)(?:[\s、]+|(?=\d+))(\d+)$/);
       
       let name = '';
       let price = null;
