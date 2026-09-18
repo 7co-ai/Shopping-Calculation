@@ -455,24 +455,67 @@
   }
 
   
+  
   // ===== 音声入力 (Voice Input) =====
   const voiceBtn = $('#voice-btn');
   const voiceStatus = $('#voice-status');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  
-  if (SpeechRecognition && voiceBtn) {
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'ja-JP';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
 
+  function showVoiceStatus(text) {
+    if (!voiceStatus) return;
+    voiceStatus.textContent = text;
+    voiceStatus.classList.add('show');
+    setTimeout(() => {
+      voiceStatus.classList.remove('show');
+    }, 3000);
+  }
+  
+  if (voiceBtn) {
+    let recognition = null;
     let isListening = false;
 
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        parseAndAddVoiceItem(transcript);
+      };
+
+      recognition.onspeechend = () => recognition.stop();
+
+      recognition.onend = () => {
+        voiceBtn.classList.remove('listening');
+        voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
+        isListening = false;
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          alert('マイクの使用が許可されていません。設定をご確認ください。');
+        } else {
+          showVoiceStatus('エラー: ' + event.error);
+        }
+        voiceBtn.classList.remove('listening');
+        voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
+        isListening = false;
+      };
+    }
+
     voiceBtn.addEventListener('click', () => {
+      if (!SpeechRecognition) {
+        alert('【お知らせ】\nホーム画面から開くアプリ版では、iPhoneの仕様により音声入力が使えない場合があります。\nSafariなどのブラウザから開くと使える可能性があります！');
+        return;
+      }
+
       if (isListening) {
         recognition.stop();
         return;
       }
+
       try {
         voiceBtn.classList.add('listening');
         voiceBtn.querySelector('.mic-icon').textContent = '🔴';
@@ -480,49 +523,12 @@
         isListening = true;
         recognition.start();
       } catch (e) {
-        console.error(e);
-        showVoiceStatus('エラー: ' + e.message);
+        alert('マイクの起動に失敗しました。' + e.message);
         voiceBtn.classList.remove('listening');
         voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
         isListening = false;
       }
     });
-
-    recognition.onresult = (event) => {
-      const transcript = event.results[0][0].transcript.trim();
-      console.log('音声認識結果:', transcript);
-      parseAndAddVoiceItem(transcript);
-    };
-
-    recognition.onspeechend = () => {
-      recognition.stop();
-    };
-
-    recognition.onend = () => {
-      voiceBtn.classList.remove('listening');
-      voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
-      isListening = false;
-    };
-
-    recognition.onerror = (event) => {
-      console.error('音声認識エラー:', event.error);
-      if (event.error === 'not-allowed') {
-        showVoiceStatus('マイクの許可が必要です');
-      } else {
-        showVoiceStatus('エラー: もう一度');
-      }
-      voiceBtn.classList.remove('listening');
-      voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
-      isListening = false;
-    };
-
-    function showVoiceStatus(text) {
-      voiceStatus.textContent = text;
-      voiceStatus.classList.add('show');
-      setTimeout(() => {
-        voiceStatus.classList.remove('show');
-      }, 3000);
-    }
 
     function parseAndAddVoiceItem(text) {
       text = text.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
@@ -539,7 +545,7 @@
       } else {
         const onlyNum = text.match(/^\d+$/);
         if (onlyNum) {
-          showVoiceStatus('品名も一緒に教えてね');
+          showVoiceStatus('品名も教えてね');
           return;
         }
         name = text.trim();
@@ -563,18 +569,15 @@
       } else {
         const taxRate = getTaxRate(name);
         shoppingItems.unshift({ id: nextId++, name, price: null, checked: false, taxRate });
-        showVoiceStatus(`${name}をメモしました！`);
+        showVoiceStatus(`${name}をメモ！`);
         renderShoppingList();
       }
       
       updateBalance();
       saveState();
     }
-  } else if (voiceBtn) {
-    voiceBtn.addEventListener('click', () => {
-      showVoiceStatus('このブラウザは音声入力非対応です');
-    });
   }
+
 \n  // ===== History Modal =====
   historyBtn.addEventListener('click', () => {
     renderHistory();
