@@ -36,10 +36,10 @@
   const selectAllCb = $('#select-all-cb');
   const deleteCheckedBtn = $('#delete-checked-btn');
   
-  const extraNameInput = $('#extra-name-input');
-  const extraPriceInput = $('#extra-price-input');
-  const addExtraBtn = $('#add-extra-btn');
-  const extraListEl = $('#extra-list');
+  const extraNameInput = $('#extra-name-input') || document.createElement('input');
+  const extraPriceInput = $('#extra-price-input') || document.createElement('input');
+  const addExtraBtn = $('#add-extra-btn') || document.createElement('button');
+  const extraListEl = $('#extra-list') || document.createElement('ul');
   
   const completeBtn = $('#complete-btn');
   const resultOverlay = $('#result-overlay');
