@@ -5,7 +5,8 @@
   padding: 0;
 }
 
-:root {
+
+:root, [data-theme="simple"] {
   --green-primary: #4CAF50;
   --green-dark: #388E3C;
   --green-light: #C8E6C9;
@@ -22,6 +23,25 @@
   --shadow: 0 2px 8px rgba(0,0,0,0.08);
   --header-height: 72px;
 }
+
+[data-theme="sakura"] {
+  --green-primary: #f472b6;
+  --green-dark: #db2777;
+  --green-light: #fce7f3;
+  --accent: #fbbf24;
+  --accent-dark: #f59e0b;
+  --bg: #fff1f2;
+}
+
+[data-theme="ocean"] {
+  --green-primary: #38bdf8;
+  --green-dark: #0284c7;
+  --green-light: #e0f2fe;
+  --accent: #f472b6;
+  --accent-dark: #db2777;
+  --bg: #f0f9ff;
+}
+
 
 html {
   font-size: 16px;
@@ -933,4 +953,54 @@ input[type="number"] {
 .voice-status.show {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ===== Titles with Icons ===== */
+.title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-primary);
+}
+
+.header-actions {
+  display: flex;
+  gap: 12px;
+}
+
+/* ===== Theme Switcher ===== */
+.theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.theme-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: bold;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.theme-option-btn.active {
+  border-color: var(--green-primary);
+  background: var(--green-light);
+}
+.theme-color-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* ===== Voice Mic SVG ===== */
+.mic-icon-svg {
+  stroke: white;
 }

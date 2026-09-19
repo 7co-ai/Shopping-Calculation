@@ -489,7 +489,7 @@
 
       recognition.onend = () => {
         voiceBtn.classList.remove('listening');
-        voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
+        
         isListening = false;
       };
 
@@ -500,7 +500,7 @@
           showVoiceStatus('エラー: ' + event.error);
         }
         voiceBtn.classList.remove('listening');
-        voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
+        
         isListening = false;
       };
     }
@@ -518,14 +518,14 @@
 
       try {
         voiceBtn.classList.add('listening');
-        voiceBtn.querySelector('.mic-icon').textContent = '🔴';
+        
         showVoiceStatus('お話しください...');
         isListening = true;
         recognition.start();
       } catch (e) {
         alert('マイクの起動に失敗しました。' + e.message);
         voiceBtn.classList.remove('listening');
-        voiceBtn.querySelector('.mic-icon').textContent = '🎙️';
+        
         isListening = false;
       }
     });
@@ -589,6 +589,37 @@
       saveState();
     }  }
 
+
+  
+  // ===== Theme =====
+  const themeBtn = $('#theme-btn');
+  const themeOverlay = $('#theme-overlay');
+  const themeCloseBtn = $('#theme-close-btn');
+  const themeOptions = document.querySelectorAll('.theme-option-btn');
+  
+  function applyTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    themeOptions.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-theme-val') === theme);
+    });
+  }
+
+  themeBtn.addEventListener('click', () => {
+    themeOverlay.classList.remove('hidden');
+  });
+
+  themeCloseBtn.addEventListener('click', () => {
+    themeOverlay.classList.add('hidden');
+  });
+
+  themeOptions.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme-val');
+      applyTheme(theme);
+      state.theme = theme;
+      saveState();
+    });
+  });
 
   // ===== History Modal =====
   historyBtn.addEventListener('click', () => {
@@ -680,7 +711,7 @@
   // ===== Persistence (localStorage) =====
   function saveState() {
     try {
-      const state = { 
+      const state = { theme: document.body.getAttribute("data-theme") || "simple", 
         budget, budgetSet, shoppingItems, extraItems, 
         nextId, isTaxInclusive, taxMemory, receiptHistory 
       };
@@ -697,9 +728,10 @@
       budget = state.budget || 0;
       budgetSet = state.budgetSet || false;
       shoppingItems = state.shoppingItems || [];
-      extraItems = state.extraItems || [];
+      extraItems = []; // Forced wipe of legacy extra items
       nextId = state.nextId || 1;
       isTaxInclusive = state.isTaxInclusive || false;
+      if(state.theme) applyTheme(state.theme);
       taxMemory = state.taxMemory || {};
       receiptHistory = state.receiptHistory || [];
 
