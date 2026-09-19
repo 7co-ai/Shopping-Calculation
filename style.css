@@ -90,11 +90,16 @@ body {
   letter-spacing: 0.05em;
 }
 
-.header-icon-btn {
+.header-actions {
   position: absolute;
   right: 16px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  gap: 12px;
+}
+
+.header-icon-btn {
   background: none;
   border: none;
   color: #fff;
@@ -963,10 +968,7 @@ input[type="number"] {
   color: var(--green-primary);
 }
 
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
+
 
 /* ===== Theme Switcher ===== */
 .theme-options {
