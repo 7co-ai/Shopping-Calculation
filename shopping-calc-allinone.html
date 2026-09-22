@@ -17,7 +17,8 @@
   padding: 0;
 }
 
-:root {
+
+:root, [data-theme="simple"] {
   --green-primary: #4CAF50;
   --green-dark: #388E3C;
   --green-light: #C8E6C9;
@@ -34,6 +35,25 @@
   --shadow: 0 2px 8px rgba(0,0,0,0.08);
   --header-height: 72px;
 }
+
+[data-theme="sakura"] {
+  --green-primary: #f472b6;
+  --green-dark: #db2777;
+  --green-light: #fce7f3;
+  --accent: #fbbf24;
+  --accent-dark: #f59e0b;
+  --bg: #fff1f2;
+}
+
+[data-theme="ocean"] {
+  --green-primary: #38bdf8;
+  --green-dark: #0284c7;
+  --green-light: #e0f2fe;
+  --accent: #f472b6;
+  --accent-dark: #db2777;
+  --bg: #f0f9ff;
+}
+
 
 html {
   font-size: 16px;
@@ -82,11 +102,16 @@ body {
   letter-spacing: 0.05em;
 }
 
-.header-icon-btn {
+.header-actions {
   position: absolute;
   right: 16px;
   top: 50%;
   transform: translateY(-50%);
+  display: flex;
+  gap: 12px;
+}
+
+.header-icon-btn {
   background: none;
   border: none;
   color: #fff;
@@ -946,6 +971,53 @@ input[type="number"] {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ===== Titles with Icons ===== */
+.title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-primary);
+}
+
+
+
+/* ===== Theme Switcher ===== */
+.theme-options {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+}
+.theme-option-btn {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg);
+  border: 2px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  font-weight: bold;
+  color: var(--text);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.theme-option-btn.active {
+  border-color: var(--green-primary);
+  background: var(--green-light);
+}
+.theme-color-circle {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* ===== Voice Mic SVG ===== */
+.mic-icon-svg {
+  stroke: white;
+}
   </style>
 </head>
 <body>
@@ -992,10 +1064,10 @@ input[type="number"] {
   const selectAllCb = $('#select-all-cb');
   const deleteCheckedBtn = $('#delete-checked-btn');
   
-  const extraNameInput = $('#extra-name-input');
-  const extraPriceInput = $('#extra-price-input');
-  const addExtraBtn = $('#add-extra-btn');
-  const extraListEl = $('#extra-list');
+  const extraNameInput = $('#extra-name-input') || document.createElement('input');
+  const extraPriceInput = $('#extra-price-input') || document.createElement('input');
+  const addExtraBtn = $('#add-extra-btn') || document.createElement('button');
+  const extraListEl = $('#extra-list') || document.createElement('ul');
   
   const completeBtn = $('#complete-btn');
   const resultOverlay = $('#result-overlay');
@@ -1072,9 +1144,28 @@ input[type="number"] {
     }
   }
 
+  // 音声コマンド用のキーワード（「完了」「レシート」等でレシート画面を表示）
+  const VOICE_COMPLETE_KEYWORDS = ['完了', 'かんりょう', 'レシート', 'れしーと', '買い物完了', 'かいものかんりょう'];
+
+  function isVoiceCommand(text) {
+    const normalized = text.toLowerCase().replace(/\s/g, '');
+    return VOICE_COMPLETE_KEYWORDS.some(kw => normalized.includes(kw));
+  }
+
   function addShoppingItem() {
     const name = itemNameInput.value.trim();
     if (!name) { itemNameInput.focus(); return; }
+
+    // 音声コマンドチェック：「完了」「レシート」等ならレシート画面を表示
+    if (isVoiceCommand(name)) {
+      setTimeout(() => {
+        itemNameInput.value = '';
+        toggleClearBtn();
+      }, 10);
+      showResult();
+      return;
+    }
+
     const taxRate = getTaxRate(name);
     const item = { id: nextId++, name, price: null, checked: false, taxRate };
     shoppingItems.unshift(item);
@@ -1410,6 +1501,173 @@ input[type="number"] {
     saveState();
   }
 
+  
+  
+  // ===== 音声入力 (Voice Input) =====
+  const voiceBtn = $('#voice-btn');
+  const voiceStatus = $('#voice-status');
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  function showVoiceStatus(text) {
+    if (!voiceStatus) return;
+    voiceStatus.textContent = text;
+    voiceStatus.classList.add('show');
+    setTimeout(() => {
+      voiceStatus.classList.remove('show');
+    }, 3000);
+  }
+  
+  if (voiceBtn) {
+    let recognition = null;
+    let isListening = false;
+
+    if (SpeechRecognition) {
+      recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        parseAndAddVoiceItem(transcript);
+      };
+
+      recognition.onspeechend = () => recognition.stop();
+
+      recognition.onend = () => {
+        voiceBtn.classList.remove('listening');
+        
+        isListening = false;
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          alert('マイクの使用が許可されていません。設定をご確認ください。');
+        } else {
+          showVoiceStatus('エラー: ' + event.error);
+        }
+        voiceBtn.classList.remove('listening');
+        
+        isListening = false;
+      };
+    }
+
+    voiceBtn.addEventListener('click', () => {
+      if (!SpeechRecognition) {
+        alert('【お知らせ】\nホーム画面から開くアプリ版では、iPhoneの仕様により音声入力が使えない場合があります。\nSafariなどのブラウザから開くと使える可能性があります！');
+        return;
+      }
+
+      if (isListening) {
+        recognition.stop();
+        return;
+      }
+
+      try {
+        voiceBtn.classList.add('listening');
+        
+        showVoiceStatus('お話しください...');
+        isListening = true;
+        recognition.start();
+      } catch (e) {
+        alert('マイクの起動に失敗しました。' + e.message);
+        voiceBtn.classList.remove('listening');
+        
+        isListening = false;
+      }
+    });
+
+    function parseAndAddVoiceItem(text) {
+      text = text.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
+      
+      let overrideTax = null;
+      if (text.includes('10%') || text.includes('10パー') || text.includes('１０パー') || text.includes('じっぱー')) {
+        overrideTax = 10;
+        text = text.replace(/(10%|10パーセント|10パー|１０パー|じっぱー)/g, ' ');
+      } else if (text.includes('8%') || text.includes('8パー') || text.includes('８パー') || text.includes('はっぱー')) {
+        overrideTax = 8;
+        text = text.replace(/(8%|8パーセント|8パー|８パー|はっぱー)/g, ' ');
+      }
+
+      text = text.replace(/(円|えん|くらい|ぐらい|です|だね)/g, '').trim();
+
+      const match = text.match(/(.+?)(?:[\s、]+|(?=\d+))(\d+)$/);
+      
+      let name = '';
+      let price = null;
+
+      if (match) {
+        name = match[1].trim();
+        price = parseInt(match[2], 10);
+      } else {
+        const onlyNum = text.match(/^\d+$/);
+        if (onlyNum) {
+          showVoiceStatus('品名も教えてね');
+          return;
+        }
+        name = text.trim();
+      }
+
+      if (!name) return;
+
+      const taxRate = overrideTax !== null ? overrideTax : getTaxRate(name);
+      if (overrideTax !== null) {
+        taxMemory[name] = overrideTax;
+      }
+
+      if (price !== null) {
+        const existingItem = shoppingItems.find(i => i.name === name);
+        if (existingItem) {
+          existingItem.price = price;
+          existingItem.checked = true;
+          if (overrideTax !== null) existingItem.taxRate = overrideTax;
+          showVoiceStatus(`${name}を${price}円で記録！`);
+        } else {
+          shoppingItems.unshift({ id: nextId++, name, price: price, checked: true, taxRate });
+          showVoiceStatus(`${name}を${price}円で追加！`);
+        }
+      } else {
+        shoppingItems.unshift({ id: nextId++, name, price: null, checked: false, taxRate });
+        showVoiceStatus(`${name}をメモ！`);
+      }
+      
+      renderShoppingList();
+      updateBalance();
+      saveState();
+    }  }
+
+
+  
+  // ===== Theme =====
+  const themeBtn = $('#theme-btn');
+  const themeOverlay = $('#theme-overlay');
+  const themeCloseBtn = $('#theme-close-btn');
+  const themeOptions = document.querySelectorAll('.theme-option-btn');
+  
+  function applyTheme(theme) {
+    document.body.setAttribute('data-theme', theme);
+    themeOptions.forEach(btn => {
+      btn.classList.toggle('active', btn.getAttribute('data-theme-val') === theme);
+    });
+  }
+
+  themeBtn.addEventListener('click', () => {
+    themeOverlay.classList.remove('hidden');
+  });
+
+  themeCloseBtn.addEventListener('click', () => {
+    themeOverlay.classList.add('hidden');
+  });
+
+  themeOptions.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const theme = btn.getAttribute('data-theme-val');
+      applyTheme(theme);
+      state.theme = theme;
+      saveState();
+    });
+  });
+
   // ===== History Modal =====
   historyBtn.addEventListener('click', () => {
     renderHistory();
@@ -1500,7 +1758,7 @@ input[type="number"] {
   // ===== Persistence (localStorage) =====
   function saveState() {
     try {
-      const state = { 
+      const state = { theme: document.body.getAttribute("data-theme") || "simple", 
         budget, budgetSet, shoppingItems, extraItems, 
         nextId, isTaxInclusive, taxMemory, receiptHistory 
       };
@@ -1517,9 +1775,10 @@ input[type="number"] {
       budget = state.budget || 0;
       budgetSet = state.budgetSet || false;
       shoppingItems = state.shoppingItems || [];
-      extraItems = state.extraItems || [];
+      extraItems = []; // Forced wipe of legacy extra items
       nextId = state.nextId || 1;
       isTaxInclusive = state.isTaxInclusive || false;
+      if(state.theme) applyTheme(state.theme);
       taxMemory = state.taxMemory || {};
       receiptHistory = state.receiptHistory || [];
 

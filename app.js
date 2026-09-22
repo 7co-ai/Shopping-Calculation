@@ -116,9 +116,28 @@
     }
   }
 
+  // 音声コマンド用のキーワード（「完了」「レシート」等でレシート画面を表示）
+  const VOICE_COMPLETE_KEYWORDS = ['完了', 'かんりょう', 'レシート', 'れしーと', '買い物完了', 'かいものかんりょう'];
+
+  function isVoiceCommand(text) {
+    const normalized = text.toLowerCase().replace(/\s/g, '');
+    return VOICE_COMPLETE_KEYWORDS.some(kw => normalized.includes(kw));
+  }
+
   function addShoppingItem() {
     const name = itemNameInput.value.trim();
     if (!name) { itemNameInput.focus(); return; }
+
+    // 音声コマンドチェック：「完了」「レシート」等ならレシート画面を表示
+    if (isVoiceCommand(name)) {
+      setTimeout(() => {
+        itemNameInput.value = '';
+        toggleClearBtn();
+      }, 10);
+      showResult();
+      return;
+    }
+
     const taxRate = getTaxRate(name);
     const item = { id: nextId++, name, price: null, checked: false, taxRate };
     shoppingItems.unshift(item);
