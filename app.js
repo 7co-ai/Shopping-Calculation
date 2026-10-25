@@ -495,27 +495,78 @@
   if (voiceBtn) {
     let recognition = null;
     let isListening = false;
+    let isFlushing = false;
+    let needsAudioFlush = false;
+    let startAfterFlush = false;
 
     function resetVoiceUI() {
       voiceBtn.classList.remove('listening');
       isListening = false;
     }
 
-    voiceBtn.addEventListener('click', () => {
-      if (!SpeechRecognition) {
-        alert('【お知らせ】\nホーム画面から開くアプリ版では、iPhoneの仕様により音声入力が使えない場合があります。\nSafariなどのブラウザから開くと使える可能性があります！');
-        return;
+    // iOS対策：1回目の認識成功後に2回目だけマイクが無音になる現象を防ぐため、
+    // 裏側で0.2秒だけダミー認識を起動→即abort()してiOSの音声回線の詰まりを自動解消する
+    function runAudioFlush() {
+      if (!SpeechRecognition || isFlushing || isListening) return;
+      isFlushing = true;
+      let flushRec = null;
+      let flushStarted = false;
+      let flushTimeout = null;
+
+      function finishFlush() {
+        if (flushTimeout) {
+          clearTimeout(flushTimeout);
+          flushTimeout = null;
+        }
+        isFlushing = false;
+        flushRec = null;
+        if (startAfterFlush) {
+          startAfterFlush = false;
+          startRealRecognition();
+        }
       }
 
-      // すでに聞き取り中の場合はabort()で回線を完全リセットして停止する
-      if (isListening && recognition) {
-        try { recognition.abort(); } catch (e) { /* ignore */ }
-        recognition = null;
-        resetVoiceUI();
-        showVoiceStatus('停止しました');
-        return;
-      }
+      try {
+        flushRec = new SpeechRecognition();
+        flushRec.lang = 'ja-JP';
+        flushRec.continuous = true;
+        flushRec.interimResults = false;
 
+        flushRec.onstart = () => {
+          flushStarted = true;
+          setTimeout(() => {
+            try { if (flushRec) flushRec.abort(); } catch (e) { /* ignore */ }
+          }, 180);
+        };
+
+        flushRec.onend = () => {
+          if (flushStarted) {
+            needsAudioFlush = false;
+          }
+          finishFlush();
+        };
+
+        flushRec.onerror = () => {
+          if (flushStarted) {
+            needsAudioFlush = false;
+          }
+          finishFlush();
+        };
+
+        // 万が一onendが来ない場合の安全タイマー
+        flushTimeout = setTimeout(() => {
+          try { if (flushRec) flushRec.abort(); } catch (e) { /* ignore */ }
+          needsAudioFlush = false;
+          finishFlush();
+        }, 700);
+
+        flushRec.start();
+      } catch (e) {
+        finishFlush();
+      }
+    }
+
+    function startRealRecognition() {
       // 前回のインスタンスが残っていればabort()で確実に回線を解放しておく
       if (recognition) {
         try {
@@ -528,13 +579,13 @@
         recognition = null;
       }
 
-      // 毎回クリーンな音声認識インスタンスを作成
+      // iOSが勝手に内部stop()を呼ばないよう continuous = true に設定
       const rec = new SpeechRecognition();
       recognition = rec;
       rec.lang = 'ja-JP';
       rec.interimResults = true;
       rec.maxAlternatives = 1;
-      rec.continuous = false;
+      rec.continuous = true;
 
       let hasResult = false;
       let latestTranscript = '';
@@ -546,20 +597,16 @@
         if (!cleaned) return;
 
         hasResult = true;
+        needsAudioFlush = true;
         if (finalizeTimer) {
           clearTimeout(finalizeTimer);
           finalizeTimer = null;
         }
+
+        // iOS対策：結果確定と同時に即座にabort()を呼んでタスクをキャンセルする
+        try { rec.abort(); } catch (e) { /* ignore */ }
         resetVoiceUI();
         parseAndAddVoiceItem(cleaned);
-
-        // iOS対策：stop()ではなくabort()を呼ぶことで、タイムアウト時と同じ回線リセットを強制実行する
-        setTimeout(() => {
-          try { rec.abort(); } catch (e) { /* ignore */ }
-          if (recognition === rec) {
-            recognition = null;
-          }
-        }, 50);
       }
 
       rec.onstart = () => {
@@ -590,22 +637,21 @@
         if (isFinal) {
           commitTranscript(latestTranscript);
         } else {
-          // 話している途中の文字を吹き出しに表示し、話し終えて1.1秒経ったら自動確定する
+          // 話している途中の文字を吹き出しに表示し、話し終えて0.85秒経ったら自動確定する
           showVoiceStatus(`🎤 ${latestTranscript}...`);
           if (finalizeTimer) clearTimeout(finalizeTimer);
           finalizeTimer = setTimeout(() => {
             commitTranscript(latestTranscript);
-          }, 1100);
+          }, 850);
         }
       };
 
       rec.onspeechend = () => {
-        // stop()はiOSの回線ロックを引き起こすため呼ばず、途中結果があれば確定タイマーを早める
         if (!hasResult && latestTranscript) {
           if (finalizeTimer) clearTimeout(finalizeTimer);
           finalizeTimer = setTimeout(() => {
             commitTranscript(latestTranscript);
-          }, 300);
+          }, 250);
         }
       };
 
@@ -616,12 +662,18 @@
         }
         if (!hasResult && latestTranscript) {
           commitTranscript(latestTranscript);
-          return;
         }
         if (recognition === rec) {
           recognition = null;
         }
         resetVoiceUI();
+
+        // 1回目の音声認識が終了した直後に、裏でダミーリセットを走らせて次回の詰まりを解消する
+        if (needsAudioFlush) {
+          setTimeout(() => {
+            runAudioFlush();
+          }, 120);
+        }
       };
 
       rec.onerror = (event) => {
@@ -656,6 +708,42 @@
         recognition = null;
         resetVoiceUI();
       }
+    }
+
+    voiceBtn.addEventListener('click', () => {
+      if (!SpeechRecognition) {
+        alert('【お知らせ】\nホーム画面から開くアプリ版では、iPhoneの仕様により音声入力が使えない場合があります。\nSafariなどのブラウザから開くと使える可能性があります！');
+        return;
+      }
+
+      // すでに聞き取り中の場合はabort()で回線を完全リセットして停止する
+      if (isListening && recognition) {
+        startAfterFlush = false;
+        try { recognition.abort(); } catch (e) { /* ignore */ }
+        recognition = null;
+        resetVoiceUI();
+        showVoiceStatus('停止しました');
+        return;
+      }
+
+      // 裏でフラッシュ処理中の場合は、フラッシュ完了直後に起動予約する
+      if (isFlushing) {
+        voiceBtn.classList.add('listening');
+        showVoiceStatus('🎤 準備中...');
+        startAfterFlush = true;
+        return;
+      }
+
+      // もし前回のフラッシュが未完了なら、タップ時にフラッシュしてから本起動する
+      if (needsAudioFlush) {
+        voiceBtn.classList.add('listening');
+        showVoiceStatus('🎤 準備中...');
+        startAfterFlush = true;
+        runAudioFlush();
+        return;
+      }
+
+      startRealRecognition();
     });
 
     function parseAndAddVoiceItem(text) {
