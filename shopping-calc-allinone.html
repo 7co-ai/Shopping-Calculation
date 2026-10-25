@@ -1521,35 +1521,19 @@ input[type="number"] {
     let recognition = null;
     let isListening = false;
 
-    if (SpeechRecognition) {
-      recognition = new SpeechRecognition();
-      recognition.lang = 'ja-JP';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript.trim();
-        parseAndAddVoiceItem(transcript);
-      };
-
-      recognition.onspeechend = () => recognition.stop();
-
-      recognition.onend = () => {
-        voiceBtn.classList.remove('listening');
-        
-        isListening = false;
-      };
-
-      recognition.onerror = (event) => {
-        if (event.error === 'not-allowed') {
-          alert('マイクの使用が許可されていません。設定をご確認ください。');
-        } else {
-          showVoiceStatus('エラー: ' + event.error);
-        }
-        voiceBtn.classList.remove('listening');
-        
-        isListening = false;
-      };
+    function stopRecognition() {
+      voiceBtn.classList.remove('listening');
+      isListening = false;
+      if (recognition) {
+        try {
+          recognition.onresult = null;
+          recognition.onspeechend = null;
+          recognition.onend = null;
+          recognition.onerror = null;
+          recognition.abort();
+        } catch (e) { /* ignore */ }
+        recognition = null;
+      }
     }
 
     voiceBtn.addEventListener('click', () => {
@@ -1558,26 +1542,64 @@ input[type="number"] {
         return;
       }
 
+      // すでに聞き取り中の場合は停止してリセット
       if (isListening) {
-        recognition.stop();
+        stopRecognition();
         return;
       }
 
+      // iOSの仕様対策：毎回新しいインスタンスを生成する
+      stopRecognition();
+      recognition = new SpeechRecognition();
+      recognition.lang = 'ja-JP';
+      recognition.interimResults = false;
+      recognition.maxAlternatives = 1;
+      recognition.continuous = false;
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript.trim();
+        stopRecognition();
+        parseAndAddVoiceItem(transcript);
+      };
+
+      recognition.onspeechend = () => {
+        if (recognition) {
+          try { recognition.stop(); } catch (e) { /* ignore */ }
+        }
+      };
+
+      recognition.onend = () => {
+        stopRecognition();
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === 'not-allowed') {
+          alert('マイクの使用が許可されていません。設定をご確認ください。');
+        } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
+          showVoiceStatus('エラー: ' + event.error);
+        }
+        stopRecognition();
+      };
+
       try {
         voiceBtn.classList.add('listening');
-        
         showVoiceStatus('お話しください...');
         isListening = true;
         recognition.start();
       } catch (e) {
         alert('マイクの起動に失敗しました。' + e.message);
-        voiceBtn.classList.remove('listening');
-        
-        isListening = false;
+        stopRecognition();
       }
     });
 
     function parseAndAddVoiceItem(text) {
+      // 「完了」「レシート」などの音声コマンドならレシート画面を表示
+      if (isVoiceCommand(text)) {
+        showVoiceStatus('レシートを表示します🧾');
+        showResult();
+        return;
+      }
+
       text = text.replace(/[０-９]/g, (s) => String.fromCharCode(s.charCodeAt(0) - 0xFEE0));
       
       let overrideTax = null;

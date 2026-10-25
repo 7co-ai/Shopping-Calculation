@@ -1,4 +1,4 @@
-const CACHE_NAME = 'shopping-calc-v5';
+const CACHE_NAME = 'shopping-calc-v15';
 const ASSETS = [
   './',
   './index.html',
@@ -27,9 +27,15 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch: cache-first strategy
+// Fetch: network-first strategy (online gets latest, offline uses cache)
 self.addEventListener('fetch', (event) => {
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        const resClone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, resClone));
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });
