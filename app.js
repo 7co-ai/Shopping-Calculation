@@ -479,12 +479,15 @@
   const voiceBtn = $('#voice-btn');
   const voiceStatus = $('#voice-status');
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  let voiceStatusTimer = null;
 
   function showVoiceStatus(text) {
     if (!voiceStatus) return;
+    voiceStatus.classList.remove('hidden');
     voiceStatus.textContent = text;
     voiceStatus.classList.add('show');
-    setTimeout(() => {
+    if (voiceStatusTimer) clearTimeout(voiceStatusTimer);
+    voiceStatusTimer = setTimeout(() => {
       voiceStatus.classList.remove('show');
     }, 3000);
   }
@@ -493,19 +496,9 @@
     let recognition = null;
     let isListening = false;
 
-    function stopRecognition() {
+    function resetVoiceUI() {
       voiceBtn.classList.remove('listening');
       isListening = false;
-      if (recognition) {
-        try {
-          recognition.onresult = null;
-          recognition.onspeechend = null;
-          recognition.onend = null;
-          recognition.onerror = null;
-          recognition.abort();
-        } catch (e) { /* ignore */ }
-        recognition = null;
-      }
     }
 
     voiceBtn.addEventListener('click', () => {
@@ -514,53 +507,90 @@
         return;
       }
 
-      // すでに聞き取り中の場合は停止してリセット
-      if (isListening) {
-        stopRecognition();
+      // すでに聞き取り中の場合は正常停止する
+      if (isListening && recognition) {
+        try { recognition.stop(); } catch (e) { /* ignore */ }
+        resetVoiceUI();
+        showVoiceStatus('停止しました');
         return;
       }
 
-      // iOSの仕様対策：毎回新しいインスタンスを生成する
-      stopRecognition();
-      recognition = new SpeechRecognition();
-      recognition.lang = 'ja-JP';
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 1;
-      recognition.continuous = false;
+      // 前回のインスタンスが残っていればイベントを外して正常終了させておく（abortはiOSでロックするため使わない）
+      if (recognition) {
+        try {
+          recognition.onresult = null;
+          recognition.onspeechend = null;
+          recognition.onend = null;
+          recognition.onerror = null;
+          recognition.stop();
+        } catch (e) { /* ignore */ }
+        recognition = null;
+      }
 
-      recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript.trim();
-        stopRecognition();
+      // 毎回クリーンな音声認識インスタンスを作成
+      const rec = new SpeechRecognition();
+      recognition = rec;
+      rec.lang = 'ja-JP';
+      rec.interimResults = false;
+      rec.maxAlternatives = 1;
+      rec.continuous = false;
+
+      let hasResult = false;
+
+      rec.onstart = () => {
+        isListening = true;
+        voiceBtn.classList.add('listening');
+        showVoiceStatus('🎤 お話しください...');
+      };
+
+      rec.onresult = (event) => {
+        if (hasResult) return;
+        const result = event.results && event.results[0] && event.results[0][0];
+        if (!result) return;
+        const transcript = result.transcript.trim();
+        if (!transcript) return;
+
+        hasResult = true;
+        // iOS対策：結果を受け取ったら即座に stop() でマイク回線を正常に閉じる
+        try { rec.stop(); } catch (e) { /* ignore */ }
+        resetVoiceUI();
         parseAndAddVoiceItem(transcript);
       };
 
-      recognition.onspeechend = () => {
-        if (recognition) {
-          try { recognition.stop(); } catch (e) { /* ignore */ }
+      rec.onspeechend = () => {
+        try { rec.stop(); } catch (e) { /* ignore */ }
+      };
+
+      rec.onend = () => {
+        if (recognition === rec) {
+          recognition = null;
         }
+        resetVoiceUI();
       };
 
-      recognition.onend = () => {
-        stopRecognition();
-      };
-
-      recognition.onerror = (event) => {
+      rec.onerror = (event) => {
         if (event.error === 'not-allowed') {
           alert('マイクの使用が許可されていません。設定をご確認ください。');
-        } else if (event.error !== 'aborted' && event.error !== 'no-speech') {
+        } else if (event.error === 'no-speech') {
+          showVoiceStatus('音声が聞き取れませんでした');
+        } else if (event.error !== 'aborted') {
           showVoiceStatus('エラー: ' + event.error);
         }
-        stopRecognition();
+        if (recognition === rec) {
+          recognition = null;
+        }
+        resetVoiceUI();
       };
 
       try {
         voiceBtn.classList.add('listening');
-        showVoiceStatus('お話しください...');
+        showVoiceStatus('🎤 準備中...');
         isListening = true;
-        recognition.start();
+        rec.start();
       } catch (e) {
         alert('マイクの起動に失敗しました。' + e.message);
-        stopRecognition();
+        recognition = null;
+        resetVoiceUI();
       }
     });
 
@@ -811,7 +841,11 @@
   // ===== Service Worker Registration =====
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => {});
+      navigator.serviceWorker.register('sw.js')
+        .then((reg) => {
+          reg.update().catch(() => {});
+        })
+        .catch(() => {});
     });
   }
 

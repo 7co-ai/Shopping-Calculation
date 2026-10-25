@@ -1,18 +1,24 @@
-const CACHE_NAME = 'shopping-calc-v15';
+const CACHE_NAME = 'shopping-calc-v16';
 const ASSETS = [
   './',
   './index.html',
-  './style.css',
-  './app.js',
+  './style.css?v=16',
+  './app.js?v=16',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
 
-// Install: cache all assets
+// Install: cache all assets with cache: 'reload' to bypass Safari HTTP disk cache
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.all(
+        ASSETS.map((url) =>
+          fetch(new Request(url, { cache: 'reload' })).then((res) => cache.put(url, res))
+        )
+      )
+    )
   );
   self.skipWaiting();
 });
