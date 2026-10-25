@@ -507,22 +507,23 @@
         return;
       }
 
-      // すでに聞き取り中の場合は正常停止する
+      // すでに聞き取り中の場合はabort()で回線を完全リセットして停止する
       if (isListening && recognition) {
-        try { recognition.stop(); } catch (e) { /* ignore */ }
+        try { recognition.abort(); } catch (e) { /* ignore */ }
+        recognition = null;
         resetVoiceUI();
         showVoiceStatus('停止しました');
         return;
       }
 
-      // 前回のインスタンスが残っていればイベントを外して正常終了させておく（abortはiOSでロックするため使わない）
+      // 前回のインスタンスが残っていればabort()で確実に回線を解放しておく
       if (recognition) {
         try {
           recognition.onresult = null;
           recognition.onspeechend = null;
           recognition.onend = null;
           recognition.onerror = null;
-          recognition.stop();
+          recognition.abort();
         } catch (e) { /* ignore */ }
         recognition = null;
       }
@@ -531,11 +532,35 @@
       const rec = new SpeechRecognition();
       recognition = rec;
       rec.lang = 'ja-JP';
-      rec.interimResults = false;
+      rec.interimResults = true;
       rec.maxAlternatives = 1;
       rec.continuous = false;
 
       let hasResult = false;
+      let latestTranscript = '';
+      let finalizeTimer = null;
+
+      function commitTranscript(text) {
+        if (hasResult) return;
+        const cleaned = (text || '').trim();
+        if (!cleaned) return;
+
+        hasResult = true;
+        if (finalizeTimer) {
+          clearTimeout(finalizeTimer);
+          finalizeTimer = null;
+        }
+        resetVoiceUI();
+        parseAndAddVoiceItem(cleaned);
+
+        // iOS対策：stop()ではなくabort()を呼ぶことで、タイムアウト時と同じ回線リセットを強制実行する
+        setTimeout(() => {
+          try { rec.abort(); } catch (e) { /* ignore */ }
+          if (recognition === rec) {
+            recognition = null;
+          }
+        }, 50);
+      }
 
       rec.onstart = () => {
         isListening = true;
@@ -545,23 +570,54 @@
 
       rec.onresult = (event) => {
         if (hasResult) return;
-        const result = event.results && event.results[0] && event.results[0][0];
-        if (!result) return;
-        const transcript = result.transcript.trim();
-        if (!transcript) return;
+        let transcript = '';
+        let isFinal = false;
 
-        hasResult = true;
-        // iOS対策：結果を受け取ったら即座に stop() でマイク回線を正常に閉じる
-        try { rec.stop(); } catch (e) { /* ignore */ }
-        resetVoiceUI();
-        parseAndAddVoiceItem(transcript);
+        for (let i = 0; i < event.results.length; i++) {
+          const res = event.results[i];
+          if (res && res[0]) {
+            transcript += res[0].transcript;
+          }
+          if (res && res.isFinal) {
+            isFinal = true;
+          }
+        }
+
+        transcript = transcript.trim();
+        if (!transcript) return;
+        latestTranscript = transcript;
+
+        if (isFinal) {
+          commitTranscript(latestTranscript);
+        } else {
+          // 話している途中の文字を吹き出しに表示し、話し終えて1.1秒経ったら自動確定する
+          showVoiceStatus(`🎤 ${latestTranscript}...`);
+          if (finalizeTimer) clearTimeout(finalizeTimer);
+          finalizeTimer = setTimeout(() => {
+            commitTranscript(latestTranscript);
+          }, 1100);
+        }
       };
 
       rec.onspeechend = () => {
-        try { rec.stop(); } catch (e) { /* ignore */ }
+        // stop()はiOSの回線ロックを引き起こすため呼ばず、途中結果があれば確定タイマーを早める
+        if (!hasResult && latestTranscript) {
+          if (finalizeTimer) clearTimeout(finalizeTimer);
+          finalizeTimer = setTimeout(() => {
+            commitTranscript(latestTranscript);
+          }, 300);
+        }
       };
 
       rec.onend = () => {
+        if (finalizeTimer) {
+          clearTimeout(finalizeTimer);
+          finalizeTimer = null;
+        }
+        if (!hasResult && latestTranscript) {
+          commitTranscript(latestTranscript);
+          return;
+        }
         if (recognition === rec) {
           recognition = null;
         }
@@ -569,6 +625,14 @@
       };
 
       rec.onerror = (event) => {
+        if (finalizeTimer) {
+          clearTimeout(finalizeTimer);
+          finalizeTimer = null;
+        }
+        if (!hasResult && latestTranscript) {
+          commitTranscript(latestTranscript);
+          return;
+        }
         if (event.error === 'not-allowed') {
           alert('マイクの使用が許可されていません。設定をご確認ください。');
         } else if (event.error === 'no-speech') {

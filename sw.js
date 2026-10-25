@@ -1,9 +1,9 @@
-const CACHE_NAME = 'shopping-calc-v16';
+const CACHE_NAME = 'shopping-calc-v17';
 const ASSETS = [
   './',
   './index.html',
-  './style.css?v=16',
-  './app.js?v=16',
+  './style.css?v=17',
+  './app.js?v=17',
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
