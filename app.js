@@ -492,199 +492,256 @@
     }, 3000);
   }
   
+  // 音声入力の動きを記録するための「フック」。通常は何もしない。
+  // 確認用表示（下の DEBUG ブロック）がある場合だけ、中身が差し替わる。
+  let voiceLog = () => {};
+  let voiceAttach = () => {};
+
+  // DEBUG-START 音声入力の確認用表示（iPhoneの不具合調査用。調査後はこのブロックごと削除できます）
+  // 画面の中に小さなログを出すだけで、外部への送信は一切しません。
+  // 表示のしかた：画面上部の「のこり予算」を3秒以内に5回タップ（またはURLに ?debug=1）
+  (() => {
+    const BUILD = 'v19';
+    const STORAGE_KEY = 'voiceDebug';
+    const MAX_LINES = 40;
+    const lines = [];
+    let panel = null;
+    let logBody = null;
+    let recCounter = 0;
+
+    function isEnabled() {
+      try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) { return false; }
+    }
+
+    function setEnabled(on) {
+      try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch (e) { /* ignore */ }
+      render();
+    }
+
+    function ensurePanel() {
+      if (panel) return;
+      panel = document.createElement('div');
+      panel.style.cssText = 'position:fixed;left:0;bottom:0;right:90px;max-height:35vh;overflow:hidden;' +
+        'background:rgba(0,0,0,0.78);color:#9f9;font:10px/1.35 monospace;padding:4px 6px;' +
+        'z-index:9999;pointer-events:none;white-space:pre-wrap;word-break:break-all;';
+
+      const head = document.createElement('div');
+      head.textContent = '音声デバッグ ' + BUILD +
+        ' / SR:' + (SpeechRecognition ? 'あり' : 'なし') +
+        ' / standalone:' + (navigator.standalone ? 'はい' : 'いいえ') + ' ';
+
+      const closeBtn = document.createElement('button');
+      closeBtn.textContent = '閉じる';
+      closeBtn.style.cssText = 'pointer-events:auto;font-size:10px;padding:1px 6px;';
+      closeBtn.addEventListener('click', () => setEnabled(false));
+      head.appendChild(closeBtn);
+
+      logBody = document.createElement('div');
+      panel.appendChild(head);
+      panel.appendChild(logBody);
+      document.body.appendChild(panel);
+    }
+
+    function render() {
+      if (!isEnabled()) {
+        if (panel) panel.style.display = 'none';
+        return;
+      }
+      ensurePanel();
+      panel.style.display = 'block';
+      // 新しいログが下に来るので、最後の数行だけ表示する
+      logBody.textContent = lines.slice(-14).join('\n');
+    }
+
+    voiceLog = (msg) => {
+      lines.push((performance.now() / 1000).toFixed(2) + 's ' + msg);
+      if (lines.length > MAX_LINES) lines.shift();
+      render();
+    };
+
+    // 認識インスタンスの全イベントを記録する（番号 #n は何個目の認識か）
+    voiceAttach = (rec) => {
+      const id = ++recCounter;
+      ['start', 'audiostart', 'soundstart', 'speechstart', 'speechend',
+       'soundend', 'audioend', 'end', 'nomatch'].forEach((name) => {
+        rec.addEventListener(name, () => voiceLog('#' + id + ' ' + name));
+      });
+      rec.addEventListener('result', (e) => {
+        const last = e.results[e.results.length - 1];
+        voiceLog('#' + id + ' result final=' + last.isFinal + ' "' + last[0].transcript + '"');
+      });
+      rec.addEventListener('error', (e) => {
+        voiceLog('#' + id + ' error ' + e.error + (e.message ? ' (' + e.message + ')' : ''));
+      });
+      voiceLog('#' + id + ' 作成');
+    };
+
+    // URLの ?debug=1 / ?debug=0 で表示を切り替える
+    try {
+      const flag = new URLSearchParams(location.search).get('debug');
+      if (flag === '1') setEnabled(true);
+      if (flag === '0') setEnabled(false);
+    } catch (e) { /* ignore */ }
+
+    // ホーム画面のアプリでは URL を変えられないので、「のこり予算」の5回タップでも切り替えられる
+    const label = document.querySelector('.balance-label');
+    if (label) {
+      let taps = 0;
+      let tapTimer = null;
+      label.addEventListener('click', () => {
+        taps += 1;
+        if (tapTimer) clearTimeout(tapTimer);
+        tapTimer = setTimeout(() => { taps = 0; }, 3000);
+        if (taps >= 5) {
+          taps = 0;
+          setEnabled(!isEnabled());
+        }
+      });
+    }
+
+    render();
+  })();
+  // DEBUG-END
+
   if (voiceBtn) {
+    const START_TIMEOUT_MS = 2000;  // 開始（onstart）が来るまで待つ時間
+    const END_TIMEOUT_MS = 1500;    // 終了（onend）が来るまで待つ時間
+    const RETRY_DELAY_MS = 300;     // 再試行までの間隔
+    const MAX_START_ATTEMPTS = 2;   // 最初の1回 + 再試行1回
+
+    // 終了（onend）が確認できるまで保持する。入っている間は次の認識を始めない
     let recognition = null;
-    let isListening = false;
-    let isFlushing = false;
-    let needsAudioFlush = false;
-    let startAfterFlush = false;
+    let isListening = false;        // ボタンが赤い状態
+    let pendingAttempt = 0;         // 前の認識が終わったら始める予約（0なら予約なし）
+    let endTimer = null;
+    let retryTimer = null;
 
-    function resetVoiceUI() {
-      voiceBtn.classList.remove('listening');
-      isListening = false;
+    function setListeningUI(on) {
+      isListening = on;
+      voiceBtn.classList.toggle('listening', on);
     }
 
-    // iOS対策：1回目の認識成功後に2回目だけマイクが無音になる現象を防ぐため、
-    // 裏側で0.2秒だけダミー認識を起動→即abort()してiOSの音声回線の詰まりを自動解消する
-    function runAudioFlush() {
-      if (!SpeechRecognition || isFlushing || isListening) return;
-      isFlushing = true;
-      let flushRec = null;
-      let flushStarted = false;
-      let flushTimeout = null;
-
-      function finishFlush() {
-        if (flushTimeout) {
-          clearTimeout(flushTimeout);
-          flushTimeout = null;
-        }
-        isFlushing = false;
-        flushRec = null;
-        if (startAfterFlush) {
-          startAfterFlush = false;
-          startRealRecognition();
-        }
+    // 前の認識の終了が確認できたので、予約があれば少し待ってから次を始める
+    function releaseRecognition(rec) {
+      if (recognition !== rec) return;
+      recognition = null;
+      if (endTimer) {
+        clearTimeout(endTimer);
+        endTimer = null;
       }
-
-      try {
-        flushRec = new SpeechRecognition();
-        flushRec.lang = 'ja-JP';
-        flushRec.continuous = true;
-        flushRec.interimResults = false;
-
-        flushRec.onstart = () => {
-          flushStarted = true;
-          setTimeout(() => {
-            try { if (flushRec) flushRec.abort(); } catch (e) { /* ignore */ }
-          }, 180);
-        };
-
-        flushRec.onend = () => {
-          if (flushStarted) {
-            needsAudioFlush = false;
-          }
-          finishFlush();
-        };
-
-        flushRec.onerror = () => {
-          if (flushStarted) {
-            needsAudioFlush = false;
-          }
-          finishFlush();
-        };
-
-        // 万が一onendが来ない場合の安全タイマー
-        flushTimeout = setTimeout(() => {
-          try { if (flushRec) flushRec.abort(); } catch (e) { /* ignore */ }
-          needsAudioFlush = false;
-          finishFlush();
-        }, 700);
-
-        flushRec.start();
-      } catch (e) {
-        finishFlush();
+      voiceLog('解放 (予約=' + pendingAttempt + ')');
+      if (pendingAttempt) {
+        const attempt = pendingAttempt;
+        pendingAttempt = 0;
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          startRecognition(attempt);
+        }, RETRY_DELAY_MS);
       }
     }
 
-    function startRealRecognition() {
-      // 前回のインスタンスが残っていればabort()で確実に回線を解放しておく
-      if (recognition) {
-        try {
-          recognition.onresult = null;
-          recognition.onspeechend = null;
-          recognition.onend = null;
-          recognition.onerror = null;
-          recognition.abort();
-        } catch (e) { /* ignore */ }
-        recognition = null;
-      }
+    // onend が来ない場合の安全策：一定時間たったら abort() して強制的に解放する
+    function armEndTimer(rec) {
+      if (endTimer) clearTimeout(endTimer);
+      endTimer = setTimeout(() => {
+        endTimer = null;
+        if (recognition !== rec) return;
+        voiceLog('onendが来ないので強制解放');
+        try { rec.abort(); } catch (e) { /* ignore */ }
+        releaseRecognition(rec);
+      }, END_TIMEOUT_MS);
+    }
 
-      // iOSが勝手に内部stop()を呼ばないよう continuous = true に設定
+    function startRecognition(attempt) {
+      voiceLog('開始 試行' + attempt);
       const rec = new SpeechRecognition();
       recognition = rec;
       rec.lang = 'ja-JP';
       rec.interimResults = true;
       rec.maxAlternatives = 1;
-      rec.continuous = true;
+      rec.continuous = false;
+      voiceAttach(rec);
 
-      let hasResult = false;
-      let latestTranscript = '';
-      let finalizeTimer = null;
+      let started = false;    // onstart が来たか
+      let committed = false;  // 結果を画面に反映済みか
+      let settled = false;    // 失敗・エラーの後始末が済んだか
+      let latest = '';
+      let startTimer = null;
 
-      function commitTranscript(text) {
-        if (hasResult) return;
-        const cleaned = (text || '').trim();
-        if (!cleaned) return;
+      function commit() {
+        if (committed || settled) return;
+        const text = latest.trim();
+        if (!text) return;
+        committed = true;
+        setListeningUI(false);
+        // abort() はせず、認識が自然に終わる（onend）のを待つ。来なければ安全タイマーで解放
+        armEndTimer(rec);
+        parseAndAddVoiceItem(text);
+      }
 
-        hasResult = true;
-        needsAudioFlush = true;
-        if (finalizeTimer) {
-          clearTimeout(finalizeTimer);
-          finalizeTimer = null;
+      // 開始できなかったとき：中断して、1回だけ作り直して再試行する。それでもだめなら失敗を表示
+      function failStart(reason) {
+        // ユーザーが中止した後（isListening が false）は再試行しない
+        if (settled || committed || !isListening) return;
+        settled = true;
+        if (startTimer) {
+          clearTimeout(startTimer);
+          startTimer = null;
         }
-
-        // iOS対策：結果確定と同時に即座にabort()を呼んでタスクをキャンセルする
+        voiceLog('開始失敗: ' + reason + ' (試行' + attempt + ')');
+        if (attempt < MAX_START_ATTEMPTS) {
+          pendingAttempt = attempt + 1;
+        } else {
+          setListeningUI(false);
+          showVoiceStatus('開始できませんでした。もう一度タップしてください');
+        }
         try { rec.abort(); } catch (e) { /* ignore */ }
-        resetVoiceUI();
-        parseAndAddVoiceItem(cleaned);
+        armEndTimer(rec);
       }
 
       rec.onstart = () => {
-        isListening = true;
-        voiceBtn.classList.add('listening');
+        if (recognition !== rec || settled) return;
+        started = true;
+        if (startTimer) {
+          clearTimeout(startTimer);
+          startTimer = null;
+        }
         showVoiceStatus('🎤 お話しください...');
       };
 
       rec.onresult = (event) => {
-        if (hasResult) return;
+        if (recognition !== rec || committed || settled) return;
         let transcript = '';
         let isFinal = false;
-
         for (let i = 0; i < event.results.length; i++) {
           const res = event.results[i];
-          if (res && res[0]) {
-            transcript += res[0].transcript;
-          }
-          if (res && res.isFinal) {
-            isFinal = true;
-          }
+          if (res && res[0]) transcript += res[0].transcript;
+          if (res && res.isFinal) isFinal = true;
         }
-
         transcript = transcript.trim();
         if (!transcript) return;
-        latestTranscript = transcript;
+        latest = transcript;
 
         if (isFinal) {
-          commitTranscript(latestTranscript);
+          commit();
         } else {
-          // 話している途中の文字を吹き出しに表示し、話し終えて0.85秒経ったら自動確定する
-          showVoiceStatus(`🎤 ${latestTranscript}...`);
-          if (finalizeTimer) clearTimeout(finalizeTimer);
-          finalizeTimer = setTimeout(() => {
-            commitTranscript(latestTranscript);
-          }, 850);
-        }
-      };
-
-      rec.onspeechend = () => {
-        if (!hasResult && latestTranscript) {
-          if (finalizeTimer) clearTimeout(finalizeTimer);
-          finalizeTimer = setTimeout(() => {
-            commitTranscript(latestTranscript);
-          }, 250);
-        }
-      };
-
-      rec.onend = () => {
-        if (finalizeTimer) {
-          clearTimeout(finalizeTimer);
-          finalizeTimer = null;
-        }
-        if (!hasResult && latestTranscript) {
-          commitTranscript(latestTranscript);
-        }
-        if (recognition === rec) {
-          recognition = null;
-        }
-        resetVoiceUI();
-
-        // 1回目の音声認識が終了した直後に、裏でダミーリセットを走らせて次回の詰まりを解消する
-        if (needsAudioFlush) {
-          setTimeout(() => {
-            runAudioFlush();
-          }, 120);
+          showVoiceStatus('🎤 ' + latest + '...');
         }
       };
 
       rec.onerror = (event) => {
-        if (finalizeTimer) {
-          clearTimeout(finalizeTimer);
-          finalizeTimer = null;
+        // 古い認識（すでに解放済み）のイベントや、反映済みの後のエラーは無視する
+        if (recognition !== rec || settled) return;
+        if (startTimer) {
+          clearTimeout(startTimer);
+          startTimer = null;
         }
-        if (!hasResult && latestTranscript) {
-          commitTranscript(latestTranscript);
+        if (committed) return;
+        if (latest) {
+          commit();
           return;
         }
+        settled = true;
         if (event.error === 'not-allowed') {
           alert('マイクの使用が許可されていません。設定をご確認ください。');
         } else if (event.error === 'no-speech') {
@@ -692,58 +749,77 @@
         } else if (event.error !== 'aborted') {
           showVoiceStatus('エラー: ' + event.error);
         }
-        if (recognition === rec) {
-          recognition = null;
+        setListeningUI(false);
+        pendingAttempt = 0;
+        armEndTimer(rec);
+      };
+
+      rec.onend = () => {
+        if (recognition !== rec) return;
+        if (startTimer) {
+          clearTimeout(startTimer);
+          startTimer = null;
         }
-        resetVoiceUI();
+        if (!committed && !settled && latest) {
+          commit();
+        } else if (!started && !committed && !settled && isListening) {
+          // 一度も開始しないまま終わった
+          failStart('開始前にonend');
+        }
+        if (!pendingAttempt) setListeningUI(false);
+        releaseRecognition(rec);
       };
 
       try {
-        voiceBtn.classList.add('listening');
+        setListeningUI(true);
         showVoiceStatus('🎤 準備中...');
-        isListening = true;
         rec.start();
+        startTimer = setTimeout(() => {
+          startTimer = null;
+          if (recognition === rec && !started) failStart('onstartが来ない');
+        }, START_TIMEOUT_MS);
       } catch (e) {
+        voiceLog('start()が例外: ' + e.message);
         alert('マイクの起動に失敗しました。' + e.message);
-        recognition = null;
-        resetVoiceUI();
+        settled = true;
+        setListeningUI(false);
+        releaseRecognition(rec);
       }
     }
 
     voiceBtn.addEventListener('click', () => {
+      voiceLog('タップ listening=' + isListening + ' 保持中=' + !!recognition);
       if (!SpeechRecognition) {
         alert('【お知らせ】\nホーム画面から開くアプリ版では、iPhoneの仕様により音声入力が使えない場合があります。\nSafariなどのブラウザから開くと使える可能性があります！');
         return;
       }
 
-      // すでに聞き取り中の場合はabort()で回線を完全リセットして停止する
-      if (isListening && recognition) {
-        startAfterFlush = false;
-        try { recognition.abort(); } catch (e) { /* ignore */ }
-        recognition = null;
-        resetVoiceUI();
+      // 聞き取り中（準備中・再試行待ちを含む）のタップは中止
+      if (isListening) {
+        pendingAttempt = 0;
+        if (retryTimer) {
+          clearTimeout(retryTimer);
+          retryTimer = null;
+        }
+        const rec = recognition;
+        setListeningUI(false);
         showVoiceStatus('停止しました');
+        if (rec) {
+          try { rec.abort(); } catch (e) { /* ignore */ }
+          armEndTimer(rec);
+        }
         return;
       }
 
-      // 裏でフラッシュ処理中の場合は、フラッシュ完了直後に起動予約する
-      if (isFlushing) {
-        voiceBtn.classList.add('listening');
+      // 前の認識がまだ終わっていないときは、終わるのを待ってから始める
+      if (recognition) {
+        setListeningUI(true);
         showVoiceStatus('🎤 準備中...');
-        startAfterFlush = true;
+        pendingAttempt = 1;
         return;
       }
 
-      // もし前回のフラッシュが未完了なら、タップ時にフラッシュしてから本起動する
-      if (needsAudioFlush) {
-        voiceBtn.classList.add('listening');
-        showVoiceStatus('🎤 準備中...');
-        startAfterFlush = true;
-        runAudioFlush();
-        return;
-      }
-
-      startRealRecognition();
+      startRecognition(1);
     });
 
     function parseAndAddVoiceItem(text) {
