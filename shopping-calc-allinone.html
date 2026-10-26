@@ -1131,6 +1131,7 @@ input[type="number"] {
   itemNameInput.addEventListener('input', () => toggleClearBtn());
 
   itemNameClearBtn.addEventListener('click', () => {
+    cancelAutoAdd('クリア');
     itemNameInput.value = '';
     toggleClearBtn();
     itemNameInput.focus();
@@ -1161,7 +1162,75 @@ input[type="number"] {
     return /[^\s0-9０-９円][^]*?[0-9０-９]+\s*(円|えん)/.test(text);
   }
 
+  // ===== 自動追加（キーボード音声入力のあと、追加ボタンを押さなくても追加する） =====
+  const AUTO_ADD_ENABLED = true;   // false にすると自動追加は完全にオフになる
+  const AUTO_ADD_DELAY_MS = 1500;  // 入力が変わらなくなってから、自動で追加するまでの時間
+
+  let autoAddTimer = null;
+  let isComposingInput = false;    // 変換中（下線つきの入力中）かどうか
+
+  function shortText(text) {
+    return text.length > 20 ? text.slice(0, 20) + '…' : text;
+  }
+
+  function cancelAutoAdd(reason) {
+    if (!autoAddTimer) return;
+    clearTimeout(autoAddTimer);
+    autoAddTimer = null;
+    voiceLog('自動追加: 取り消し (' + reason + ')');
+  }
+
+  // 入力が変わるたびに呼ぶ。「品名+数字+円」の形で、変換中でなければ、タイマーをやり直す
+  function scheduleAutoAdd(composing) {
+    if (!AUTO_ADD_ENABLED) return;
+    if (composing || isComposingInput) {
+      cancelAutoAdd('変換中');
+      return;
+    }
+    const text = itemNameInput.value.trim();
+    if (!parseVoiceText || !looksLikeNameWithPrice(text)) {
+      cancelAutoAdd('金額つきの形ではない');
+      return;
+    }
+
+    const restarted = !!autoAddTimer;
+    if (autoAddTimer) clearTimeout(autoAddTimer);
+    voiceLog('自動追加: タイマー開始' + (restarted ? '(やり直し)' : '') + ' "' + shortText(text) + '"');
+    autoAddTimer = setTimeout(() => {
+      autoAddTimer = null;
+      // 実行の直前にもう一度確認する（文字が変わっていたら追加しない）
+      const current = itemNameInput.value.trim();
+      if (isComposingInput || current !== text) {
+        voiceLog('自動追加: 中止 (実行直前に変化)');
+        return;
+      }
+      voiceLog('自動追加: 実行 "' + shortText(current) + '"');
+      addShoppingItem();
+    }, AUTO_ADD_DELAY_MS);
+  }
+
+  itemNameInput.addEventListener('input', (e) => {
+    voiceLog('input ' + (e.inputType || '?') + ' 変換中=' + !!(e.isComposing || isComposingInput) +
+      ' "' + shortText(itemNameInput.value) + '"');
+    scheduleAutoAdd(e.isComposing);
+  });
+  itemNameInput.addEventListener('compositionstart', () => {
+    isComposingInput = true;
+    cancelAutoAdd('変換中');
+  });
+  itemNameInput.addEventListener('compositionend', () => {
+    isComposingInput = false;
+    scheduleAutoAdd(false);
+  });
+  // compositionend が来ないまま離れた場合に、変換中の状態が残らないようにする
+  itemNameInput.addEventListener('blur', () => {
+    isComposingInput = false;
+  });
+
   function addShoppingItem() {
+    // 手で追加された場合に、自動追加とぶつかって二重に追加されないようにする
+    cancelAutoAdd('手で追加');
+
     const name = itemNameInput.value.trim();
     if (!name) { itemNameInput.focus(); return; }
 
@@ -1552,7 +1621,7 @@ input[type="number"] {
   // 画面の中に小さなログを出すだけで、外部への送信は一切しません。
   // 表示のしかた：画面上部の「のこり予算」を3秒以内に5回タップ（またはURLに ?debug=1）
   (() => {
-    const BUILD = 'v20';
+    const BUILD = 'v21';
     const STORAGE_KEY = 'voiceDebug';
     const MAX_LINES = 40;
     const lines = [];
