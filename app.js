@@ -124,6 +124,15 @@
     return VOICE_COMPLETE_KEYWORDS.some(kw => normalized.includes(kw));
   }
 
+  // 音声入力の解析処理（parseAndAddVoiceItem）の受け皿。
+  // マイクボタンの準備ができたときに、下の音声入力の部分で中身が入る
+  let parseVoiceText = null;
+
+  // 「品名 + 数字 + 円」の形か調べる（例：ひじき250円）。品名の部分が空（250円だけ）なら false
+  function looksLikeNameWithPrice(text) {
+    return /[^\s0-9０-９円][^]*?[0-9０-９]+\s*(円|えん)/.test(text);
+  }
+
   function addShoppingItem() {
     const name = itemNameInput.value.trim();
     if (!name) { itemNameInput.focus(); return; }
@@ -135,6 +144,20 @@
         toggleClearBtn();
       }, 10);
       showResult();
+      return;
+    }
+
+    // キーボードの音声入力などで「ひじき250円」のように金額つきで入ったときは、
+    // マイクボタンと同じ解析（品名と金額に分ける処理）で追加する
+    if (parseVoiceText && looksLikeNameWithPrice(name)) {
+      // 「ひじきを250円」の「を」が品名に残らないよう、数字の直前の「を」だけ取り除く
+      const spoken = name.replace(/を\s*(?=[0-9０-９])/g, ' ');
+      setTimeout(() => {
+        itemNameInput.value = '';
+        toggleClearBtn();
+        itemNameInput.focus();
+      }, 10);
+      parseVoiceText(spoken);
       return;
     }
 
@@ -501,7 +524,7 @@
   // 画面の中に小さなログを出すだけで、外部への送信は一切しません。
   // 表示のしかた：画面上部の「のこり予算」を3秒以内に5回タップ（またはURLに ?debug=1）
   (() => {
-    const BUILD = 'v19';
+    const BUILD = 'v20';
     const STORAGE_KEY = 'voiceDebug';
     const MAX_LINES = 40;
     const lines = [];
@@ -821,6 +844,9 @@
 
       startRecognition(1);
     });
+
+    // 品名欄に金額つきで入った文字も、同じ解析で追加できるようにする
+    parseVoiceText = parseAndAddVoiceItem;
 
     function parseAndAddVoiceItem(text) {
       // 「完了」「レシート」などの音声コマンドならレシート画面を表示
