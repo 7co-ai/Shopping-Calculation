@@ -1131,7 +1131,7 @@ input[type="number"] {
   itemNameInput.addEventListener('input', () => toggleClearBtn());
 
   itemNameClearBtn.addEventListener('click', () => {
-    cancelAutoAdd('クリア');
+    cancelAutoAdd();
     itemNameInput.value = '';
     toggleClearBtn();
     itemNameInput.focus();
@@ -1169,54 +1169,39 @@ input[type="number"] {
   let autoAddTimer = null;
   let isComposingInput = false;    // 変換中（下線つきの入力中）かどうか
 
-  function shortText(text) {
-    return text.length > 20 ? text.slice(0, 20) + '…' : text;
-  }
-
-  function cancelAutoAdd(reason) {
+  function cancelAutoAdd() {
     if (!autoAddTimer) return;
     clearTimeout(autoAddTimer);
     autoAddTimer = null;
-    voiceLog('自動追加: 取り消し (' + reason + ')');
   }
 
   // 入力が変わるたびに呼ぶ。「品名+数字+円」の形で、変換中でなければ、タイマーをやり直す
   function scheduleAutoAdd(composing) {
     if (!AUTO_ADD_ENABLED) return;
     if (composing || isComposingInput) {
-      cancelAutoAdd('変換中');
+      cancelAutoAdd();
       return;
     }
     const text = itemNameInput.value.trim();
     if (!parseVoiceText || !looksLikeNameWithPrice(text)) {
-      cancelAutoAdd('金額つきの形ではない');
+      cancelAutoAdd();
       return;
     }
 
-    const restarted = !!autoAddTimer;
     if (autoAddTimer) clearTimeout(autoAddTimer);
-    voiceLog('自動追加: タイマー開始' + (restarted ? '(やり直し)' : '') + ' "' + shortText(text) + '"');
     autoAddTimer = setTimeout(() => {
       autoAddTimer = null;
       // 実行の直前にもう一度確認する（文字が変わっていたら追加しない）
       const current = itemNameInput.value.trim();
-      if (isComposingInput || current !== text) {
-        voiceLog('自動追加: 中止 (実行直前に変化)');
-        return;
-      }
-      voiceLog('自動追加: 実行 "' + shortText(current) + '"');
+      if (isComposingInput || current !== text) return;
       addShoppingItem();
     }, AUTO_ADD_DELAY_MS);
   }
 
-  itemNameInput.addEventListener('input', (e) => {
-    voiceLog('input ' + (e.inputType || '?') + ' 変換中=' + !!(e.isComposing || isComposingInput) +
-      ' "' + shortText(itemNameInput.value) + '"');
-    scheduleAutoAdd(e.isComposing);
-  });
+  itemNameInput.addEventListener('input', (e) => scheduleAutoAdd(e.isComposing));
   itemNameInput.addEventListener('compositionstart', () => {
     isComposingInput = true;
-    cancelAutoAdd('変換中');
+    cancelAutoAdd();
   });
   itemNameInput.addEventListener('compositionend', () => {
     isComposingInput = false;
@@ -1229,7 +1214,7 @@ input[type="number"] {
 
   function addShoppingItem() {
     // 手で追加された場合に、自動追加とぶつかって二重に追加されないようにする
-    cancelAutoAdd('手で追加');
+    cancelAutoAdd();
 
     const name = itemNameInput.value.trim();
     if (!name) { itemNameInput.focus(); return; }
@@ -1612,117 +1597,6 @@ input[type="number"] {
     }, 3000);
   }
   
-  // 音声入力の動きを記録するための「フック」。通常は何もしない。
-  // 確認用表示（下の DEBUG ブロック）がある場合だけ、中身が差し替わる。
-  let voiceLog = () => {};
-  let voiceAttach = () => {};
-
-  // DEBUG-START 音声入力の確認用表示（iPhoneの不具合調査用。調査後はこのブロックごと削除できます）
-  // 画面の中に小さなログを出すだけで、外部への送信は一切しません。
-  // 表示のしかた：画面上部の「のこり予算」を3秒以内に5回タップ（またはURLに ?debug=1）
-  (() => {
-    const BUILD = 'v21';
-    const STORAGE_KEY = 'voiceDebug';
-    const MAX_LINES = 40;
-    const lines = [];
-    let panel = null;
-    let logBody = null;
-    let recCounter = 0;
-
-    function isEnabled() {
-      try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) { return false; }
-    }
-
-    function setEnabled(on) {
-      try { localStorage.setItem(STORAGE_KEY, on ? '1' : '0'); } catch (e) { /* ignore */ }
-      render();
-    }
-
-    function ensurePanel() {
-      if (panel) return;
-      panel = document.createElement('div');
-      panel.style.cssText = 'position:fixed;left:0;bottom:0;right:90px;max-height:35vh;overflow:hidden;' +
-        'background:rgba(0,0,0,0.78);color:#9f9;font:10px/1.35 monospace;padding:4px 6px;' +
-        'z-index:9999;pointer-events:none;white-space:pre-wrap;word-break:break-all;';
-
-      const head = document.createElement('div');
-      head.textContent = '音声デバッグ ' + BUILD +
-        ' / SR:' + (SpeechRecognition ? 'あり' : 'なし') +
-        ' / standalone:' + (navigator.standalone ? 'はい' : 'いいえ') + ' ';
-
-      const closeBtn = document.createElement('button');
-      closeBtn.textContent = '閉じる';
-      closeBtn.style.cssText = 'pointer-events:auto;font-size:10px;padding:1px 6px;';
-      closeBtn.addEventListener('click', () => setEnabled(false));
-      head.appendChild(closeBtn);
-
-      logBody = document.createElement('div');
-      panel.appendChild(head);
-      panel.appendChild(logBody);
-      document.body.appendChild(panel);
-    }
-
-    function render() {
-      if (!isEnabled()) {
-        if (panel) panel.style.display = 'none';
-        return;
-      }
-      ensurePanel();
-      panel.style.display = 'block';
-      // 新しいログが下に来るので、最後の数行だけ表示する
-      logBody.textContent = lines.slice(-14).join('\n');
-    }
-
-    voiceLog = (msg) => {
-      lines.push((performance.now() / 1000).toFixed(2) + 's ' + msg);
-      if (lines.length > MAX_LINES) lines.shift();
-      render();
-    };
-
-    // 認識インスタンスの全イベントを記録する（番号 #n は何個目の認識か）
-    voiceAttach = (rec) => {
-      const id = ++recCounter;
-      ['start', 'audiostart', 'soundstart', 'speechstart', 'speechend',
-       'soundend', 'audioend', 'end', 'nomatch'].forEach((name) => {
-        rec.addEventListener(name, () => voiceLog('#' + id + ' ' + name));
-      });
-      rec.addEventListener('result', (e) => {
-        const last = e.results[e.results.length - 1];
-        voiceLog('#' + id + ' result final=' + last.isFinal + ' "' + last[0].transcript + '"');
-      });
-      rec.addEventListener('error', (e) => {
-        voiceLog('#' + id + ' error ' + e.error + (e.message ? ' (' + e.message + ')' : ''));
-      });
-      voiceLog('#' + id + ' 作成');
-    };
-
-    // URLの ?debug=1 / ?debug=0 で表示を切り替える
-    try {
-      const flag = new URLSearchParams(location.search).get('debug');
-      if (flag === '1') setEnabled(true);
-      if (flag === '0') setEnabled(false);
-    } catch (e) { /* ignore */ }
-
-    // ホーム画面のアプリでは URL を変えられないので、「のこり予算」の5回タップでも切り替えられる
-    const label = document.querySelector('.balance-label');
-    if (label) {
-      let taps = 0;
-      let tapTimer = null;
-      label.addEventListener('click', () => {
-        taps += 1;
-        if (tapTimer) clearTimeout(tapTimer);
-        tapTimer = setTimeout(() => { taps = 0; }, 3000);
-        if (taps >= 5) {
-          taps = 0;
-          setEnabled(!isEnabled());
-        }
-      });
-    }
-
-    render();
-  })();
-  // DEBUG-END
-
   if (voiceBtn) {
     const START_TIMEOUT_MS = 2000;  // 開始（onstart）が来るまで待つ時間
     const END_TIMEOUT_MS = 1500;    // 終了（onend）が来るまで待つ時間
@@ -1749,7 +1623,6 @@ input[type="number"] {
         clearTimeout(endTimer);
         endTimer = null;
       }
-      voiceLog('解放 (予約=' + pendingAttempt + ')');
       if (pendingAttempt) {
         const attempt = pendingAttempt;
         pendingAttempt = 0;
@@ -1766,21 +1639,18 @@ input[type="number"] {
       endTimer = setTimeout(() => {
         endTimer = null;
         if (recognition !== rec) return;
-        voiceLog('onendが来ないので強制解放');
         try { rec.abort(); } catch (e) { /* ignore */ }
         releaseRecognition(rec);
       }, END_TIMEOUT_MS);
     }
 
     function startRecognition(attempt) {
-      voiceLog('開始 試行' + attempt);
       const rec = new SpeechRecognition();
       recognition = rec;
       rec.lang = 'ja-JP';
       rec.interimResults = true;
       rec.maxAlternatives = 1;
       rec.continuous = false;
-      voiceAttach(rec);
 
       let started = false;    // onstart が来たか
       let committed = false;  // 結果を画面に反映済みか
@@ -1800,7 +1670,7 @@ input[type="number"] {
       }
 
       // 開始できなかったとき：中断して、1回だけ作り直して再試行する。それでもだめなら失敗を表示
-      function failStart(reason) {
+      function failStart() {
         // ユーザーが中止した後（isListening が false）は再試行しない
         if (settled || committed || !isListening) return;
         settled = true;
@@ -1808,7 +1678,6 @@ input[type="number"] {
           clearTimeout(startTimer);
           startTimer = null;
         }
-        voiceLog('開始失敗: ' + reason + ' (試行' + attempt + ')');
         if (attempt < MAX_START_ATTEMPTS) {
           pendingAttempt = attempt + 1;
         } else {
@@ -1884,7 +1753,7 @@ input[type="number"] {
           commit();
         } else if (!started && !committed && !settled && isListening) {
           // 一度も開始しないまま終わった
-          failStart('開始前にonend');
+          failStart();
         }
         if (!pendingAttempt) setListeningUI(false);
         releaseRecognition(rec);
@@ -1896,10 +1765,9 @@ input[type="number"] {
         rec.start();
         startTimer = setTimeout(() => {
           startTimer = null;
-          if (recognition === rec && !started) failStart('onstartが来ない');
+          if (recognition === rec && !started) failStart();
         }, START_TIMEOUT_MS);
       } catch (e) {
-        voiceLog('start()が例外: ' + e.message);
         alert('マイクの起動に失敗しました。' + e.message);
         settled = true;
         setListeningUI(false);
@@ -1908,7 +1776,6 @@ input[type="number"] {
     }
 
     voiceBtn.addEventListener('click', () => {
-      voiceLog('タップ listening=' + isListening + ' 保持中=' + !!recognition);
       if (!SpeechRecognition) {
         alert('【お知らせ】\nホーム画面から開くアプリ版では、iPhoneの仕様により音声入力が使えない場合があります。\nSafariなどのブラウザから開くと使える可能性があります！');
         return;
